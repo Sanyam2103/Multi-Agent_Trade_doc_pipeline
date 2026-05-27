@@ -48,9 +48,12 @@ This application leverages **FastAPI** for the backend, **LangGraph** for multi-
    pip install fastapi uvicorn pydantic python-dotenv aiofiles aiosqlite langgraph anthropic
    ```
 4. **Environment Variables**:
-   Create a `.env` file in the root directory and add your API key:
+   Create a `.env` file in the root directory and add your API key along with AWS credentials (for Textract fallback):
    ```env
    ANTHROPIC_API_KEY=your_anthropic_api_key_here
+   AWS_ACCESS_KEY_ID=your_aws_access_key
+   AWS_SECRET_ACCESS_KEY=your_aws_secret_key
+   AWS_REGION=your_aws_region
    ```
 
 ---

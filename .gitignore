@@ -64,3 +64,5 @@ dmypy.json
 
 test_client.py
 test_run.py
+uploads/
+temp_processed_images/
