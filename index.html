@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Agent Logistics Pipeline Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #3b82f6;
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body class="min-h-screen text-gray-800 p-4 md:p-8">
+    <div class="max-w-5xl mx-auto space-y-8">
+        <!-- Header -->
+        <header class="text-center pt-8 pb-4">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900 tracking-tight">Multi-Agent Logistics Pipeline</h1>
+            <p class="mt-3 text-lg text-gray-600">AI-powered document extraction and reconciliation</p>
+        </header>
+
+        <!-- Main Upload Section -->
+        <section class="glass-panel rounded-2xl p-6 md:p-8">
+            <form id="upload-form" class="space-y-6">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-3">Upload Trade Document</label>
+                    <div class="mt-1 flex justify-center px-6 pt-8 pb-8 border-2 border-gray-300 border-dashed rounded-xl hover:border-blue-500 transition-colors bg-gray-50/50 relative group cursor-pointer"
+                        id="drop-zone">
+                        <div class="space-y-2 text-center">
+                            <svg class="mx-auto h-12 w-12 text-gray-400 group-hover:text-blue-500 transition-colors"
+                                stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
+                                <path
+                                    d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                            <div class="flex text-sm text-gray-600 justify-center items-center">
+                                <label for="file-upload"
+                                    class="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500 px-3 py-1 shadow-sm border border-gray-200">
+                                    <span>Select a file</span>
+                                    <input id="file-upload" name="file" type="file" class="sr-only"
+                                        accept=".pdf,.jpg,.jpeg,.png" required>
+                                </label>
+                                <p class="pl-2 pt-1 text-gray-500">or drag and drop</p>
+                            </div>
+                            <p class="text-xs text-gray-400 mt-2">PDF, PNG, JPG accepted</p>
+                            <p id="file-name-display" class="text-sm font-semibold text-blue-600 mt-4 h-5"></p>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex justify-end">
+                    <button type="submit" id="submit-btn"
+                        class="inline-flex justify-center items-center py-3 px-6 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors w-full md:w-auto">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                        </svg>
+                        Submit to Pipeline
+                    </button>
+                </div>
+            </form>
+
+            <!-- Loading State -->
+            <div id="loading-state"
+                class="hidden mt-8 flex flex-col items-center justify-center py-10 space-y-5 bg-blue-50/50 rounded-xl border border-blue-100">
+                <div class="spinner"></div>
+                <p id="loading-text" class="text-sm font-medium text-blue-700 animate-pulse text-center px-4">Pipeline
+                    Running: Claude 4.6 Sonnet extracting data...</p>
+            </div>
+
+            <!-- Error Terminal -->
+            <div id="error-terminal"
+                class="hidden mt-8 bg-gray-900 rounded-lg p-5 font-mono text-sm text-red-400 whitespace-pre-wrap shadow-inner border border-red-900/50">
+            </div>
+        </section>
+
+        <!-- Results Section (Hidden by Default) -->
+        <section id="results-container" class="hidden space-y-6 pb-12">
+
+            <!-- Execution Summary (Header Banner) -->
+            <div id="execution-summary"
+                class="glass-panel rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between border-l-8 transition-colors duration-300 gap-4">
+                <div>
+                    <h2 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Document ID</h2>
+                    <p id="doc-id-display" class="text-2xl font-semibold text-gray-900 font-mono"></p>
+                </div>
+                <div class="md:text-right">
+                    <h2 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Final Status</h2>
+                    <span id="final-status-badge"
+                        class="px-5 py-2.5 inline-flex text-sm leading-5 font-bold rounded-full shadow-sm">
+                        <!-- Badge injected via JS -->
+                    </span>
+                </div>
+            </div>
+
+            <div class="flex flex-col gap-6">
+                <!-- Audit & Validation Matrix Table -->
+                <div class="glass-panel rounded-2xl overflow-hidden shadow-sm flex flex-col w-full">
+                    <div class="px-6 py-5 border-b border-gray-100 bg-white/50">
+                        <h3 class="text-lg font-semibold text-gray-900">Audit & Validation Matrix</h3>
+                        <p class="text-sm text-gray-500 mt-1">Detailed field-by-field verification results</p>
+                    </div>
+                    <div class="overflow-x-auto flex-1 bg-white">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th scope="col"
+                                        class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                        Field Name</th>
+                                    <th scope="col"
+                                        class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                        Expected Value</th>
+                                    <th scope="col"
+                                        class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                        Extracted (Found)</th>
+                                    <th scope="col"
+                                        class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                        Confidence</th>
+                                    <th scope="col"
+                                        class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                        Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="audit-table-body" class="bg-white divide-y divide-gray-100">
+                                <!-- Rows injected via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Agent Output Panel -->
+                <div id="agent-output-panel" class="hidden glass-panel rounded-2xl p-6 flex flex-col">
+
+                    <!-- Email Draft Area (Escalation) -->
+                    <div id="email-draft-container" class="hidden flex-1 flex flex-col">
+                        <label class="block text-sm font-semibold text-gray-800 mb-2">Automated Remediation
+                            Draft</label>
+                        <textarea id="email-draft-area" readonly
+                            class="w-full bg-white border border-gray-200 rounded-xl p-4 text-sm text-gray-700 flex-1 min-h-[160px] focus:ring-0 resize-none shadow-sm font-mono"></textarea>
+                        <p class="text-xs text-gray-500 mt-2 italic">This payload represents the agent's explicit
+                            reasoning sent to the supplier.</p>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- Natural Language Query Section -->
+        <section class="glass-panel rounded-2xl p-6 md:p-8 mt-8 shadow-sm border border-gray-100">
+            <div class="mb-5">
+                <h2 class="text-xl font-bold text-gray-900">Ask the Data Analyst</h2>
+                <p class="text-sm text-gray-500 mt-1">Query your processed shipments using natural language.</p>
+            </div>
+            <form id="query-form" class="space-y-4">
+                <div class="relative">
+                    <input type="text" id="query-input" placeholder="e.g., How many shipments were Auto-Approved today?"
+                        class="w-full pl-4 pr-12 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white shadow-sm placeholder-gray-400 text-gray-800" required>
+                    <button type="submit" id="query-btn" class="absolute right-2 top-1.5 bottom-1.5 px-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </button>
+                </div>
+            </form>
+            
+            <!-- Query Loading -->
+            <div id="query-loading" class="hidden mt-6 flex items-center justify-center py-4 space-x-3 text-blue-600">
+                <div class="spinner !h-6 !w-6 !border-2"></div>
+                <span class="text-sm font-medium animate-pulse">Analyzing database...</span>
+            </div>
+
+            <!-- Query Result -->
+            <div id="query-result-container" class="hidden mt-6 p-5 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
+                <h4 class="text-xs font-bold text-blue-800 uppercase tracking-wider mb-2">Answer</h4>
+                <p id="query-answer" class="text-gray-800 font-medium whitespace-pre-wrap"></p>
+                
+                <details class="mt-4">
+                    <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-700 font-medium">View Raw SQL</summary>
+                    <div class="mt-2 p-3 bg-gray-900 rounded-lg overflow-x-auto">
+                        <code id="query-sql" class="text-xs font-mono text-blue-300 whitespace-pre"></code>
+                    </div>
+                </details>
+            </div>
+            
+            <!-- Query Error -->
+            <div id="query-error" class="hidden mt-6 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700"></div>
+        </section>
+    </div>
+
+    <script>
+        const form = document.getElementById('upload-form');
+        const fileInput = document.getElementById('file-upload');
+        const fileNameDisplay = document.getElementById('file-name-display');
+        const loadingState = document.getElementById('loading-state');
+        const resultsContainer = document.getElementById('results-container');
+        const errorTerminal = document.getElementById('error-terminal');
+        const submitBtn = document.getElementById('submit-btn');
+        const dropZone = document.getElementById('drop-zone');
+
+        // Handle drag and drop visuals
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => {
+                dropZone.classList.add('border-blue-500', 'bg-blue-50');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => {
+                dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+            }, false);
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            let dt = e.dataTransfer;
+            let files = dt.files;
+
+            if (files.length > 0) {
+                fileInput.files = files;
+                updateFileName(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                updateFileName(e.target.files[0]);
+            }
+        });
+
+        function updateFileName(file) {
+            fileNameDisplay.textContent = file.name;
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            // UI Reset
+            errorTerminal.classList.add('hidden');
+            resultsContainer.classList.add('hidden');
+            loadingState.classList.remove('hidden');
+            submitBtn.disabled = true;
+            submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('http://localhost:8000/process-document', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                renderResults(data);
+
+            } catch (error) {
+                errorTerminal.textContent = `[ERROR] Pipeline Execution Failed\n> ${error.message}\n> Please ensure the FastAPI backend is running at localhost:8000`;
+                errorTerminal.classList.remove('hidden');
+            } finally {
+                loadingState.classList.add('hidden');
+                submitBtn.disabled = false;
+                submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        });
+
+        function renderResults(data) {
+            // Unhide results
+            resultsContainer.classList.remove('hidden');
+
+            // Scroll to results
+            setTimeout(() => {
+                resultsContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 100);
+
+            // 1. Header Banner
+            const summaryBanner = document.getElementById('execution-summary');
+            const docIdDisplay = document.getElementById('doc-id-display');
+            const statusBadge = document.getElementById('final-status-badge');
+
+            docIdDisplay.textContent = data.document_id || 'DOC-UNKNOWN';
+
+            const finalStatus = data.final_status || 'UNKNOWN';
+            statusBadge.textContent = finalStatus;
+
+            if (finalStatus === 'VERIFIED') {
+                summaryBanner.className = 'glass-panel rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between border-l-8 border-green-500 bg-gradient-to-r from-green-50 to-transparent transition-colors duration-300 gap-4';
+                statusBadge.className = 'px-5 py-2.5 inline-flex text-sm leading-5 font-bold rounded-full shadow-sm bg-green-100 text-green-800 border border-green-200';
+            } else if (finalStatus === 'HUMAN_REVIEW') {
+                summaryBanner.className = 'glass-panel rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between border-l-8 border-red-500 bg-gradient-to-r from-red-50 to-transparent transition-colors duration-300 gap-4';
+                statusBadge.className = 'px-5 py-2.5 inline-flex text-sm leading-5 font-bold rounded-full shadow-sm bg-red-100 text-red-800 border border-red-200';
+            } else {
+                summaryBanner.className = 'glass-panel rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between border-l-8 border-gray-400 bg-gray-50 transition-colors duration-300 gap-4';
+                statusBadge.className = 'px-5 py-2.5 inline-flex text-sm leading-5 font-bold rounded-full shadow-sm bg-gray-100 text-gray-800 border border-gray-200';
+            }
+
+            const agentOutputPanel = document.getElementById('agent-output-panel');
+            const emailDraftContainer = document.getElementById('email-draft-container');
+            const emailDraftArea = document.getElementById('email-draft-area');
+
+            if (finalStatus === 'HUMAN_REVIEW' && data.drafted_email) {
+                emailDraftArea.value = data.drafted_email;
+                emailDraftContainer.classList.remove('hidden');
+                agentOutputPanel.classList.remove('hidden');
+            } else {
+                emailDraftContainer.classList.add('hidden');
+                agentOutputPanel.classList.add('hidden');
+            }
+
+
+            // 3. Audit Table
+            const tbody = document.getElementById('audit-table-body');
+            tbody.innerHTML = ''; // clear previous
+
+            let auditResultsRaw = null;
+            if (data.validation_report && data.validation_report.audit_results) {
+                auditResultsRaw = data.validation_report.audit_results;
+            } else if (data.audit_results) {
+                auditResultsRaw = data.audit_results;
+            }
+
+            let auditResults = [];
+            if (auditResultsRaw) {
+                if (Array.isArray(auditResultsRaw)) {
+                    auditResults = auditResultsRaw;
+                } else if (typeof auditResultsRaw === 'object') {
+                    // Convert the backend dictionary to an array for the frontend table
+                    auditResults = Object.entries(auditResultsRaw).map(([key, val]) => ({
+                        field_name: key,
+                        expected_value: val.expected,
+                        extracted_value: val.found,
+                        status: val.status,
+                        confidence: val.confidence,
+                        error_message: val.explanation
+                    }));
+                }
+            }
+
+            if (auditResults.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="px-6 py-8 text-center text-sm text-gray-500 bg-gray-50/50">No audit results returned for this document.</td></tr>`;
+            } else {
+                auditResults.forEach(result => {
+                    const tr = document.createElement('tr');
+                    tr.className = 'hover:bg-gray-50/80 transition-colors';
+
+                    // Field Name
+                    const tdName = document.createElement('td');
+                    tdName.className = 'px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-800';
+                    tdName.textContent = result.field_name || '-';
+
+                    // Expected Value
+                    const tdExpected = document.createElement('td');
+                    tdExpected.className = 'px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-mono';
+                    tdExpected.textContent = result.expected_value || '-';
+
+                    // Found Value
+                    const tdFound = document.createElement('td');
+                    tdFound.className = 'px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-mono';
+                    tdFound.textContent = result.extracted_value || '-';
+
+                    // Confidence Score
+                    const tdConf = document.createElement('td');
+                    tdConf.className = 'px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-mono';
+                    tdConf.textContent = result.confidence !== undefined && result.confidence !== null ? (result.confidence * 100).toFixed(1) + '%' : '-';
+
+                    // Status Badge
+                    const tdStatus = document.createElement('td');
+                    tdStatus.className = 'px-6 py-4 whitespace-nowrap text-sm';
+
+                    let badgeClass = 'px-2.5 py-1 inline-flex text-xs leading-5 font-bold rounded-md border ';
+                    let statusText = result.status || 'unknown';
+                    let tooltip = '';
+
+                    if (statusText.toLowerCase() === 'match') {
+                        badgeClass += 'bg-green-50 text-green-700 border-green-200';
+                    } else if (statusText.toLowerCase() === 'mismatch') {
+                        badgeClass += 'bg-red-50 text-red-700 border-red-200';
+                        if (result.error_message) {
+                            tooltip = result.error_message;
+                        }
+                    } else if (statusText.toLowerCase() === 'uncertain') {
+                        badgeClass += 'bg-orange-50 text-orange-700 border-orange-200';
+                    } else {
+                        badgeClass += 'bg-gray-50 text-gray-700 border-gray-200';
+                    }
+
+                    // Construct the badge HTML
+                    let badgeHtml = `<span class="${badgeClass}" title="${tooltip}">${statusText.toUpperCase()}</span>`;
+
+                    // If mismatch and has error message, display it beneath
+                    if (statusText.toLowerCase() === 'mismatch' && tooltip) {
+                        badgeHtml += `<div class="text-[11px] text-red-500 mt-1 max-w-[200px] truncate" title="${tooltip}">${tooltip}</div>`;
+                    }
+
+                    tdStatus.innerHTML = badgeHtml;
+
+                    tr.appendChild(tdName);
+                    tr.appendChild(tdExpected);
+                    tr.appendChild(tdFound);
+                    tr.appendChild(tdConf);
+                    tr.appendChild(tdStatus);
+
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+
+        // Query Handler
+        const queryForm = document.getElementById('query-form');
+        const queryInput = document.getElementById('query-input');
+        const queryBtn = document.getElementById('query-btn');
+        const queryLoading = document.getElementById('query-loading');
+        const queryResultContainer = document.getElementById('query-result-container');
+        const queryAnswer = document.getElementById('query-answer');
+        const querySql = document.getElementById('query-sql');
+        const queryError = document.getElementById('query-error');
+
+        queryForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const question = queryInput.value.trim();
+            if (!question) return;
+
+            // UI Reset
+            queryBtn.disabled = true;
+            queryBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            queryLoading.classList.remove('hidden');
+            queryResultContainer.classList.add('hidden');
+            queryError.classList.add('hidden');
+
+            try {
+                const response = await fetch('http://localhost:8000/query', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question })
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json();
+                    throw new Error(errData.message || `HTTP Error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                queryAnswer.textContent = data.answer;
+                querySql.textContent = data.raw_sql;
+                queryResultContainer.classList.remove('hidden');
+
+            } catch (error) {
+                queryError.textContent = `Error executing query: ${error.message}`;
+                queryError.classList.remove('hidden');
+            } finally {
+                queryLoading.classList.add('hidden');
+                queryBtn.disabled = false;
+                queryBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        });
+    </script>
+</body>
+
+</html>

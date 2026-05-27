@@ -1,0 +1,14 @@
+aiofiles
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+numpy
+langgraph
+anthropic
+boto3
+opencv-python-headless
+pdf2image
+
+# Note: pdf2image requires a system-level dependency called 'poppler'.
+# Please install it using your system's package manager (e.g., 'brew install poppler' or 'sudo apt-get install poppler-utils').
