@@ -335,7 +335,7 @@ def router_node(state: DocumentState) -> DocumentState:
                 "(e.g., analyzing fuzzy matches or naming variations)."
             )
             response = client.messages.create(
-                model="claude-sonnet-4-6",
+                model="claude-haiku-4-5",
                 max_tokens=256,
                 messages=[{"role": "user", "content": prompt}]
             )
@@ -356,7 +356,7 @@ def router_node(state: DocumentState) -> DocumentState:
                 "2. 'drafted_email': A highly professional, polite, itemized email addressed to the external supplier detailing each specific discrepancy and requesting an urgent, corrected document amendment."
             )
             response = client.messages.create(
-                model="claude-sonnet-4-6",
+                model="claude-haiku-4-5",
                 max_tokens=1024,
                 messages=[{"role": "user", "content": prompt}]
             )
