@@ -305,6 +305,7 @@ async def query_analytics(request: QueryRequest):
             f"You are a SQL expert. Translate the following user question into a valid SQLite query.\n"
             f"Here is the database schema:\n{schema_ddl}\n\n"
             f"CRITICAL MAPPING RULES:\n"
+            f"- ONLY GENERATE `SELECT` QUERIES. You are strictly forbidden from generating `UPDATE`, `DELETE`, `DROP`, `INSERT`, or `ALTER` queries. If the user asks to modify data, return a SELECT query that safely returns nothing or answers a related read-only question.\n"
             f"- Use JOINs to connect the `shipments` table with `commercial_invoices`, `bills_of_lading`, and `packing_lists` on `batch_id` when necessary.\n"
             f"- `final_status` in `shipments` can ONLY be 'VERIFIED', 'HUMAN_REVIEW', or 'AMENDMENT_REQUIRED'.\n"
             f"- For all text column comparisons (like ports, names, or incoterms), ALWAYS use case-insensitive matching (e.g. `LOWER(port_of_loading) LIKE LOWER('%value%')`) to prevent case mismatch errors.\n\n"
@@ -327,6 +328,12 @@ async def query_analytics(request: QueryRequest):
         if raw_sql.endswith("```"):
             raw_sql = raw_sql[:-3]
         raw_sql = raw_sql.strip()
+            
+        # Step 1.5: Security Guardrail against destructive queries
+        forbidden_keywords = ["UPDATE", "DELETE", "DROP", "INSERT", "ALTER", "TRUNCATE", "REPLACE", "CREATE"]
+        upper_sql = raw_sql.upper()
+        if any(keyword in upper_sql for keyword in forbidden_keywords):
+            raise ValueError(f"Security Policy Violation: Destructive operations are not allowed. Extracted SQL: {raw_sql}")
             
         # Step 2: Local DB Execution
         async with aiosqlite.connect(DB_PATH) as db:
