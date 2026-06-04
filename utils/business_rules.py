@@ -11,6 +11,30 @@ from typing import Dict, Any
 # Pyrefly Info: C2_Pyrefly_Tool_Created
 
 
+import re
+
+def normalize_text(text: Any) -> str:
+    if not text:
+        return ""
+    text = str(text).lower().strip()
+    
+    # Replace superscripts to standard numbers so m³ becomes m3
+    text = text.replace("³", "3").replace("²", "2")
+    
+    # Remove commas which are often used in numeric values
+    text = text.replace(",", "")
+    
+    # Strip common units from the text to allow pure numeric comparison
+    # Matches words like kg, kgs, kilo, kilos, m, m3, cm, mm, lbs, lb, oz, pallet, pallets
+    text = re.sub(r'\b(kgs?|kilos?|lbs?|oz|m3?|c?mm?|pallets?)\b', '', text)
+    
+    # Remove any trailing .0 or .00 (e.g., 19860.00 -> 19860)
+    text = re.sub(r'\.0+$', '', text)
+    
+    # Remove any extra characters that might be left hanging like dots or extra spaces
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
+
 def audit_extracted_fields(extracted_data: Dict[str, Any], expected_rules: Dict[str, str]) -> Dict[str, Any]:
     """
     Audits extracted document fields against a set of expected customer rules.
@@ -53,8 +77,8 @@ def audit_extracted_fields(extracted_data: Dict[str, Any], expected_rules: Dict[
             extraction_confidence = 0.0
             
         # Normalize both values for a consistent comparison
-        norm_expected = expected_value.lower().strip()
-        norm_extracted = str(extracted_value).lower().strip() if extracted_value is not None else ""
+        norm_expected = normalize_text(expected_value)
+        norm_extracted = normalize_text(extracted_value)
 
         result = {
             "status": "",
@@ -69,7 +93,7 @@ def audit_extracted_fields(extracted_data: Dict[str, Any], expected_rules: Dict[
             # Rule 1: Exact Match
             result["status"] = "match"
             result["explanation"] = "Exact textual match."
-        elif norm_expected in norm_extracted or norm_extracted in norm_expected:
+        elif norm_extracted and norm_expected and (norm_expected in norm_extracted or norm_extracted in norm_expected):
             # Rule 2: Shorthand / Substring Guard
             result["status"] = "uncertain"
             result["explanation"] = "Shorthand or partial containment detected."

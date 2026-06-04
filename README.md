@@ -11,7 +11,7 @@ This application leverages **FastAPI** for the backend, **LangGraph** for multi-
 - **Strict Business Validation**: An automated reconciliation engine audits extracted fields against expected customer contract rules, utilizing smart shorthand/substring guards and confidence-split gates to prevent false mismatch penalties.
 - **Automated Remediation**: If a document requires human review or an amendment, the agent explicitly documents its technical reasoning and drafts a highly professional email to the supplier detailing the exact discrepancies.
 - **Natural Language Data Analytics**: Processed documents are safely archived into a local relational SQLite database (`analytics.sqlite`). The frontend features an "Ask the Data Analyst" section where users can query their shipments using natural language (powered by Claude 4.5 Haiku acting as a Text-to-SQL engine).
-- **Responsive UI**: A beautiful, glassmorphic single-page dashboard with drag-and-drop uploads, execution summaries, and a detailed Audit & Validation Matrix.
+- **Responsive UI**: A beautiful, glassmorphic single-page dashboard with real-time Server-Sent Events (SSE) updates, execution summaries, and a detailed Audit & Validation Matrix.
 
 ---
 
@@ -79,13 +79,15 @@ python -m http.server 8080
 Open your web browser and navigate to:
 **`http://localhost:8080`**
 
-From here, you can drag and drop a trade document (image/PDF) to see the multi-agent pipeline in action!
+### 4. Process a Document
+To trigger the multi-agent pipeline, simply drop a trade document (image/PDF) into the local `inbox/` directory located in the project root. The backend's automated watcher will detect the new files, begin processing, and stream the status and results directly to the frontend dashboard in real-time!
 
 ---
 
 ## 🌐 API Endpoints
 
-- `POST /process-document`: Accepts a multipart/form-data `file` upload. Triggers the LangGraph asynchronous execution, evaluates the document, saves the results to the local analytics DB, and returns the audit results.
+- `GET /events`: Server-Sent Events (SSE) endpoint that streams real-time processing status (`processing_started`, `processing_complete`) to connected frontend clients.
+- `POST /process-document`: Legacy fallback endpoint. Accepts a multipart/form-data `file` upload.
 - `POST /query`: The Natural Language Query endpoint. Accepts JSON `{"question": "string"}`. Generates raw SQL using Claude, queries the SQLite DB, and synthesizes a natural language answer.
 
 ---

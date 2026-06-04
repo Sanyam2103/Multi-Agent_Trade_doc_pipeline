@@ -26,13 +26,35 @@ def get_customer_rules(customer_id: str) -> dict:
     """
     profiles = {
         "GOCOMET_CUSTOMER_01": {
-            "bol_number": "BKG98765432",
-            "consignee_name": "SUNRISE TRADING CO., LTD.",
-            "port_of_loading": "HAMBURG, GERMANY",
-            "port_of_discharge": "SINGAPORE",
-            "description_of_goods": "INDUSTRIAL ELECTRIC MOTORS (MODEL: EM-500)",
-            "gross_weight": "4,850 KGS",
-            "container_number": "STC-SIN-01/20"
+            "commercial_invoice": {
+                "invoice_number": "34567",
+                "consignee_name": "XYZ Imports",
+                "hs_code": "3926.00.00",
+                "incoterms": "FOB LONGBEACH",
+                "description_of_goods": "BAR STOOL ALUMINIUM 500 X 100 X 100MM STAINLESS STEEL",
+                "gross_weight": "225",
+                "total_amount": "19860"
+            },
+            "bill_of_lading": {
+                "bol_number": "LONSYD123456",
+                "shipper_name": "ABC Exports",
+                "consignee_name": "XYZ Imports",
+                "port_of_loading": "Long Beach",
+                "port_of_discharge": "Sydney",
+                "description_of_goods": "20'GP CONTAINER",
+                "gross_weight": "3,225",
+                "total_package_count": "27",
+                "container_number": "TTIU456789"
+            },
+            "packing_list": {
+                "exporter_name": "ABC Exports",
+                "consignee_name": "XYZ Imports",
+                "invoice_number": "34567",
+                "hs_code": "",
+                "total_gross_weight": "3,225",
+                "total_volume": "27",
+                "total_package_count": "16"
+            }
         }
     }
     return profiles.get(customer_id, {})

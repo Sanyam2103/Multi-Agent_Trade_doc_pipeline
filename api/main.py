@@ -1,6 +1,7 @@
-
 import os
 import uuid
+import asyncio
+import shutil
 # pyrefly: ignore [missing-import]
 from dotenv import load_dotenv
 import aiofiles
@@ -10,7 +11,10 @@ from fastapi import FastAPI, UploadFile, File, HTTPException,status
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 # pyrefly: ignore [missing-import]
-from fastapi.responses import JSONResponse
+from fastapi import Request
+# pyrefly: ignore [missing-import]
+from fastapi.responses import JSONResponse, StreamingResponse
+import json
 # pyrefly: ignore [missing-import]
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
@@ -21,7 +25,7 @@ import anthropic
 # pyrefly: ignore [missing-import]
 import aiosqlite
 
-from models.state import DocumentState
+from models.state import ShipmentState
 from agents.graph import workflow # Import the raw workflow builder
 from utils.storage import initialize_analytics_db, save_shipment_to_analytics, DB_PATH
 
@@ -29,9 +33,98 @@ from utils.storage import initialize_analytics_db, save_shipment_to_analytics, D
 # Load environment variables from .env file
 load_dotenv()
 
-# Define a directory to store uploaded files
+# Define directories to store uploaded and watched files
 UPLOADS_DIR = "uploads"
+INBOX_DIR = "inbox"
+PROCESSED_DIR = "processed"
 os.makedirs(UPLOADS_DIR, exist_ok=True)
+os.makedirs(INBOX_DIR, exist_ok=True)
+os.makedirs(PROCESSED_DIR, exist_ok=True)
+
+from models.state import ShipmentState
+
+# Global list to hold client queues for SSE
+connected_clients = []
+
+async def watch_inbox_folder(app: FastAPI):
+    """
+    Background task that watches the ./inbox folder for new subfolders (simulated emails).
+    It processes the entire batch through the Single Thread Multi-Slot State graph.
+    """
+    print("--- Starting Inbox Watcher Task ---")
+    while True:
+        try:
+            for item in os.listdir(INBOX_DIR):
+                item_path = os.path.join(INBOX_DIR, item)
+                
+                # Treat each subfolder as a batch/email
+                if os.path.isdir(item_path):
+                    batch_id = item
+                    print(f"\n--- Found new batch (batch_id: {batch_id}) in inbox ---")
+                    
+                    unprocessed = []
+                    for file_name in os.listdir(item_path):
+                        file_path = os.path.join(item_path, file_name)
+                        if os.path.isfile(file_path):
+                            unprocessed.append(os.path.abspath(file_path))
+                    
+                    if unprocessed:
+                        initial_state = ShipmentState(
+                            batch_id=batch_id,
+                            unprocessed_files=unprocessed,
+                            commercial_invoice=None,
+                            bill_of_lading=None,
+                            packing_list=None,
+                            validation_report=None,
+                            cross_validation_report=None,
+                            final_status="processing",
+                            agent_reasoning=None,
+                            drafted_email=None
+                        )
+                        config = {"configurable": {"thread_id": batch_id}}
+                        
+                        print(f"Invoking graph for batch: {batch_id}")
+                        
+                        # Notify frontend that processing has started
+                        start_event = {"type": "processing_started", "batch_id": batch_id}
+                        for client_q in connected_clients:
+                            await client_q.put(start_event)
+                            
+                        try:
+                            # 5 minute timeout for processing an entire batch
+                            final_state = await asyncio.wait_for(app.state.graph_app.ainvoke(initial_state, config), timeout=300.0)
+                            print(f"Graph execution finished for batch {batch_id}. Final status: {final_state.get('final_status')}")
+                            await save_shipment_to_analytics(final_state)
+                            print(f"Shipment details for batch {batch_id} saved to analytics DB.")
+                            
+                            # Notify frontend that processing is complete
+                            result_event = {
+                                "type": "processing_complete",
+                                "message": "Document processing complete.",
+                                "document_id": batch_id,
+                                "final_status": final_state.get("final_status"),
+                                "validation_report": final_state.get("validation_report"),
+                                "cross_validation_report": final_state.get("cross_validation_report"),
+                                "drafted_email": final_state.get("drafted_email"),
+                                "agent_reasoning": final_state.get("agent_reasoning"),
+                            }
+                            for client_q in connected_clients:
+                                await client_q.put(result_event)
+                                
+                        except asyncio.TimeoutError:
+                            print(f"Timeout: Graph execution took longer than 300 seconds for {batch_id}")
+                    
+                    # Cleanup: Move the entire subfolder to the processed directory
+                    dest_path = os.path.join(PROCESSED_DIR, item)
+                    if os.path.exists(dest_path):
+                        shutil.rmtree(dest_path) # Remove if it already exists to overwrite
+                    shutil.move(item_path, dest_path)
+                    print(f"--- Moved {item_path} to {dest_path} ---")
+                    
+        except Exception as e:
+            print(f"Error in inbox watcher: {e}")
+            
+        await asyncio.sleep(5)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -48,7 +141,14 @@ async def lifespan(app: FastAPI):
         # Compile the graph using the live, async checkpointer and attach it to the app state
         app.state.graph_app = workflow.compile(checkpointer=saver)
         print("Graph compiled asynchronously and attached to app state.")
+        
+        # Start the background watcher task
+        watcher_task = asyncio.create_task(watch_inbox_folder(app))
+        
         yield # The application runs while in this yielded state
+        
+        # Cleanup on shutdown
+        watcher_task.cancel()
     print("--- Server shutting down ---")
 
 # Initialize the FastAPI app with the lifespan manager
@@ -88,16 +188,16 @@ async def process_document(file: UploadFile = File(...)):
         print(f"File '{file.filename}' uploaded and saved to '{file_location}'")
 
         # Initialize the state for the graph
-        initial_state = DocumentState(
-            document_id=file_id,
-            document_path=os.path.abspath(file_location),
-            document_type=None,
-            extraction_tier=1,
-            current_confidence=0.0,
-            raw_text_fallback=None,
-            extracted_data=None,
+        initial_state = ShipmentState(
+            batch_id=str(thread_id),
+            unprocessed_files=[os.path.abspath(file_location)],
+            commercial_invoice=None,
+            bill_of_lading=None,
+            packing_list=None,
             validation_report=None,
+            cross_validation_report=None,
             final_status="processing",
+            agent_reasoning=None,
             drafted_email=None
         )
         
@@ -122,8 +222,7 @@ async def process_document(file: UploadFile = File(...)):
                 "document_id": file_id,
                 "final_status": final_state.get("final_status"),
                 "validation_report": final_state.get("validation_report"),
-                "extracted_data": final_state.get("extracted_data"),
-                "current_confidence": final_state.get("current_confidence"),
+                "cross_validation_report": final_state.get("cross_validation_report"),
                 "drafted_email": final_state.get("drafted_email"),
                 "agent_reasoning": final_state.get("agent_reasoning"),
             }
@@ -140,6 +239,29 @@ async def process_document(file: UploadFile = File(...)):
 def read_root():
     return {"message": "Welcome to the Multi-Agent Trade Document Pipeline API"}
 
+@app.get("/events")
+async def sse_events(request: Request):
+    """
+    Server-Sent Events endpoint to push real-time updates to the frontend.
+    """
+    queue = asyncio.Queue()
+    connected_clients.append(queue)
+
+    async def event_generator():
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                data = await queue.get()
+                yield f"data: {json.dumps(data)}\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            if queue in connected_clients:
+                connected_clients.remove(queue)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
 class QueryRequest(BaseModel):
     question: str
 
@@ -150,29 +272,41 @@ async def query_analytics(request: QueryRequest):
         client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         schema_ddl = """
         CREATE TABLE shipments (
-            document_id TEXT PRIMARY KEY,
-            document_type TEXT,
+            batch_id TEXT PRIMARY KEY,
             final_status TEXT,
             agent_reasoning TEXT,
             drafted_email TEXT,
-            average_confidence REAL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            consignee_name TEXT, consignee_name_confidence REAL,
-            hs_code TEXT, hs_code_confidence REAL,
-            port_of_loading TEXT, port_of_loading_confidence REAL,
-            port_of_discharge TEXT, port_of_discharge_confidence REAL,
-            incoterms TEXT, incoterms_confidence REAL,
-            description_of_goods TEXT, description_of_goods_confidence REAL,
-            gross_weight TEXT, gross_weight_confidence REAL,
-            invoice_number TEXT, invoice_number_confidence REAL
-        )
+            created_at TIMESTAMP
+        );
+        CREATE TABLE commercial_invoices (
+            document_id TEXT PRIMARY KEY, batch_id TEXT, document_path TEXT, average_confidence REAL,
+            invoice_number TEXT, invoice_number_confidence REAL, consignee_name TEXT, consignee_name_confidence REAL,
+            hs_code TEXT, hs_code_confidence REAL, incoterms TEXT, incoterms_confidence REAL,
+            description_of_goods TEXT, description_of_goods_confidence REAL, gross_weight TEXT, gross_weight_confidence REAL,
+            total_amount REAL, total_amount_confidence REAL, FOREIGN KEY(batch_id) REFERENCES shipments(batch_id)
+        );
+        CREATE TABLE bills_of_lading (
+            document_id TEXT PRIMARY KEY, batch_id TEXT, document_path TEXT, average_confidence REAL,
+            bol_number TEXT, bol_number_confidence REAL, shipper_name TEXT, shipper_name_confidence REAL,
+            consignee_name TEXT, consignee_name_confidence REAL, port_of_loading TEXT, port_of_loading_confidence REAL,
+            port_of_discharge TEXT, port_of_discharge_confidence REAL, description_of_goods TEXT, description_of_goods_confidence REAL,
+            gross_weight TEXT, gross_weight_confidence REAL, total_package_count TEXT, total_package_count_confidence REAL,
+            container_number TEXT, container_number_confidence REAL, FOREIGN KEY(batch_id) REFERENCES shipments(batch_id)
+        );
+        CREATE TABLE packing_lists (
+            document_id TEXT PRIMARY KEY, batch_id TEXT, document_path TEXT, average_confidence REAL,
+            exporter_name TEXT, exporter_name_confidence REAL, consignee_name TEXT, consignee_name_confidence REAL,
+            invoice_number TEXT, invoice_number_confidence REAL, hs_code TEXT, hs_code_confidence REAL,
+            total_gross_weight TEXT, total_gross_weight_confidence REAL, total_volume TEXT, total_volume_confidence REAL,
+            total_package_count TEXT, total_package_count_confidence REAL, FOREIGN KEY(batch_id) REFERENCES shipments(batch_id)
+        );
         """
         sql_prompt = (
-            f"You are a SQL expert. Translate the following user question into a valid SQLite query "
-            f"for the `shipments` table. Schema:\n{schema_ddl}\n\n"
+            f"You are a SQL expert. Translate the following user question into a valid SQLite query.\n"
+            f"Here is the database schema:\n{schema_ddl}\n\n"
             f"CRITICAL MAPPING RULES:\n"
-            f"- `final_status` can ONLY be one of these exact string values: 'VERIFIED', 'HUMAN_REVIEW', 'AMENDMENT_REQUIRED'. Map user terms like 'approved' or 'auto-approved' to 'VERIFIED', and 'flagged' or 'review' to 'HUMAN_REVIEW'.\n"
-            f"- `document_type` is typically 'commercial_invoice' or 'bill_of_lading'.\n"
+            f"- Use JOINs to connect the `shipments` table with `commercial_invoices`, `bills_of_lading`, and `packing_lists` on `batch_id` when necessary.\n"
+            f"- `final_status` in `shipments` can ONLY be 'VERIFIED', 'HUMAN_REVIEW', or 'AMENDMENT_REQUIRED'.\n"
             f"- For all text column comparisons (like ports, names, or incoterms), ALWAYS use case-insensitive matching (e.g. `LOWER(port_of_loading) LIKE LOWER('%value%')`) to prevent case mismatch errors.\n\n"
             f"User question: {request.question}\n\n"
             f"Return ONLY the raw executable SQL string, completely stripped of markdown code blocks, backticks, or preamble text."
