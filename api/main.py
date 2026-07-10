@@ -10,7 +10,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException,status
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 # pyrefly: ignore [missing-import]
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 # pyrefly: ignore [missing-import]
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
@@ -136,9 +136,10 @@ async def process_document(file: UploadFile = File(...)):
             content={"message": f"An internal server error occurred: {e}"}
         )
 
-@app.get("/")
+@app.get("/", response_class=FileResponse)
 def read_root():
-    return {"message": "Welcome to the Multi-Agent Trade Document Pipeline API"}
+    # Serve the main HTML file from the root directory
+    return FileResponse("../index.html")
 
 class QueryRequest(BaseModel):
     question: str
