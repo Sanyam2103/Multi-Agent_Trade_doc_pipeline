@@ -66,4 +66,12 @@ test_client.py
 test_run.py
 uploads/
 temp_processed_images/
+
+# Application Data Directories
+inbox/
+processed/
+
+# SQLite temporary WAL files
+*.sqlite-shm
+*.sqlite-wal
 .dockerignore

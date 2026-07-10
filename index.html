@@ -4,29 +4,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multi-Agent Logistics Pipeline Dashboard</title>
+    <title>GoComet Logistics Pipeline Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #f3f4f6;
+            background-color: #f8fafc;
         }
 
         .glass-panel {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025);
+        }
+
+        .animate-fade-in {
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .spinner {
-            border: 4px solid rgba(0, 0, 0, 0.1);
+            border: 3px solid rgba(59, 130, 246, 0.1);
             border-left-color: #3b82f6;
             border-radius: 50%;
-            width: 36px;
-            height: 36px;
+            width: 24px;
+            height: 24px;
             animation: spin 1s linear infinite;
         }
 
@@ -39,152 +55,215 @@
                 transform: rotate(360deg);
             }
         }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
     </style>
 </head>
 
-<body class="min-h-screen text-gray-800 p-4 md:p-8">
-    <div class="max-w-5xl mx-auto space-y-8">
-        <!-- Header -->
-        <header class="text-center pt-8 pb-4">
-            <h1 class="text-3xl md:text-4xl font-bold text-gray-900 tracking-tight">Multi-Agent Logistics Pipeline</h1>
-            <p class="mt-3 text-lg text-gray-600">AI-powered document extraction and reconciliation</p>
-        </header>
+<body class="min-h-screen text-slate-800 antialiased flex flex-col items-center py-10 px-4">
 
-        <!-- Main Upload Section -->
-        <section class="glass-panel rounded-2xl p-6 md:p-8">
-            <form id="upload-form" class="space-y-6">
+    <!-- Header -->
+    <header class="w-full max-w-6xl mb-8 flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900 tracking-tight">CargoGenius Workspace</h1>
+            <p class="text-sm text-slate-500 mt-1">Intelligent Trade Document Reconciliation</p>
+        </div>
+        <div class="flex items-center space-x-3 bg-white px-4 py-2 rounded-full shadow-sm border border-slate-100">
+            <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+            <span class="text-sm font-medium text-slate-600">Agents Online</span>
+        </div>
+    </header>
+
+    <div class="w-full max-w-6xl space-y-6">
+
+        <!-- Agent Processing State (Incoming) -->
+        <div id="loading-state"
+            class="hidden glass-panel rounded-2xl p-6 border border-blue-100 shadow-blue-900/5 animate-fade-in relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-1 bg-blue-100">
+                <div class="h-full bg-blue-500 w-1/3 animate-[pulse_2s_ease-in-out_infinite]"></div>
+            </div>
+            <div class="flex items-start space-x-4">
+                <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                    <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z">
+                        </path>
+                    </svg>
+                </div>
                 <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-3">Upload Trade Document</label>
-                    <div class="mt-1 flex justify-center px-6 pt-8 pb-8 border-2 border-gray-300 border-dashed rounded-xl hover:border-blue-500 transition-colors bg-gray-50/50 relative group cursor-pointer"
-                        id="drop-zone">
-                        <div class="space-y-2 text-center">
-                            <svg class="mx-auto h-12 w-12 text-gray-400 group-hover:text-blue-500 transition-colors"
-                                stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
-                                <path
-                                    d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
-                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                            </svg>
-                            <div class="flex text-sm text-gray-600 justify-center items-center">
-                                <label for="file-upload"
-                                    class="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500 px-3 py-1 shadow-sm border border-gray-200">
-                                    <span>Select a file</span>
-                                    <input id="file-upload" name="file" type="file" class="sr-only"
-                                        accept=".pdf,.jpg,.jpeg,.png" required>
-                                </label>
-                                <p class="pl-2 pt-1 text-gray-500">or drag and drop</p>
+                    <h3 class="text-sm font-bold text-slate-900">New Email from Supplier</h3>
+                    <p class="text-xs text-slate-500 mt-1">Doc attached. AI agent is extracting and verifying fields
+                        against contract...</p>
+                    <div class="mt-4 flex items-center space-x-2 text-xs font-medium text-blue-600">
+                        <div class="spinner border-2 !w-4 !h-4"></div>
+                        <span>Analyzing document...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Error Terminal -->
+        <div id="error-terminal"
+            class="hidden bg-red-50 border border-red-100 rounded-xl p-4 text-xs font-mono text-red-600 whitespace-pre-wrap shadow-sm">
+        </div>
+
+        <!-- Right Column: Verification, Discrepancy, Draft -->
+        <div id="results-container" class="hidden flex flex-col space-y-6">
+
+            <!-- Header Result -->
+            <div class="glass-panel rounded-2xl p-5 flex items-center justify-between border-l-4"
+                id="result-header-panel">
+                <div>
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Document Ref</p>
+                    <p id="doc-id-display" class="text-lg font-bold text-slate-900 font-mono mt-0.5">DOC-XXXX</p>
+                </div>
+                <div class="text-right">
+                    <span id="final-status-badge" class="px-3 py-1 text-xs font-bold rounded-full border">STATUS</span>
+                </div>
+            </div>
+
+            <!-- Verification & Discrepancy Split View -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                <!-- Field-by-Field Verification Result -->
+                <div class="glass-panel rounded-2xl flex flex-col h-[400px]">
+                    <div class="p-4 border-b border-slate-100">
+                        <h3 class="text-sm font-bold text-slate-900">Verification Matrix</h3>
+                        <p class="text-xs text-slate-500 mt-0.5">Select a flagged field to view details</p>
+                    </div>
+                    <div class="flex-1 overflow-y-auto p-2">
+                        <ul id="audit-list" class="space-y-1">
+                            <!-- Items injected via JS -->
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Discrepancy Detail Panel -->
+                <div id="discrepancy-panel" class="glass-panel rounded-2xl p-5 h-[400px] flex flex-col">
+                    <h3 class="text-sm font-bold text-slate-900 mb-4">Discrepancy Detail</h3>
+
+                    <div id="no-selection-msg" class="flex-1 flex flex-col items-center justify-center text-center">
+                        <svg class="w-10 h-10 text-slate-200 mb-2" fill="none" stroke="currentColor"
+                            viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122">
+                            </path>
+                        </svg>
+                        <p class="text-sm text-slate-500">Select a mismatched field <br>to investigate.</p>
+                    </div>
+
+                    <div id="discrepancy-content" class="hidden flex-1 flex flex-col space-y-4">
+                        <div>
+                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Field</p>
+                            <p id="detail-field-name"
+                                class="text-sm font-bold text-slate-900 bg-slate-100 px-2 py-1 rounded inline-block">
+                            </p>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="bg-green-50/50 border border-green-100 rounded-lg p-3">
+                                <p class="text-[10px] font-bold text-green-600 uppercase tracking-wider mb-1">Expected
+                                    (Contract)</p>
+                                <p id="detail-expected" class="text-sm font-mono text-slate-800 word-break"></p>
                             </div>
-                            <p class="text-xs text-gray-400 mt-2">PDF, PNG, JPG accepted</p>
-                            <p id="file-name-display" class="text-sm font-semibold text-blue-600 mt-4 h-5"></p>
+                            <div class="bg-red-50/50 border border-red-100 rounded-lg p-3">
+                                <p class="text-[10px] font-bold text-red-600 uppercase tracking-wider mb-1">Found
+                                    (Document)</p>
+                                <p id="detail-found" class="text-sm font-mono text-slate-800 word-break"></p>
+                            </div>
+                        </div>
+
+                        <div>
+                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Agent Reason</p>
+                            <p id="detail-reason"
+                                class="text-sm text-slate-700 bg-orange-50/50 border border-orange-100 p-3 rounded-lg">
+                            </p>
+                        </div>
+
+                        <!-- Mock Source Snippet -->
+                        <div class="mt-auto">
+                            <p
+                                class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z">
+                                    </path>
+                                </svg>
+                                Source Snippet
+                            </p>
+                            <div class="h-20 bg-slate-900 rounded-lg overflow-hidden relative group">
+                                <img id="snippet-img"
+                                    src="https://via.placeholder.com/400x100.png?text=Document+Snippet+Loading..."
+                                    class="w-full h-full object-cover opacity-80" alt="snippet">
+                                <div class="absolute inset-0 border-2 border-red-500/50 rounded-lg pointer-events-none">
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
-                <div class="flex justify-end">
-                    <button type="submit" id="submit-btn"
-                        class="inline-flex justify-center items-center py-3 px-6 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors w-full md:w-auto">
-                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            </div>
+
+            <!-- Draft Reply -->
+            <div id="draft-panel" class="hidden glass-panel rounded-2xl flex flex-col overflow-hidden">
+                <div class="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                    <div>
+                        <h3 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+                            <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z">
+                                </path>
+                            </svg>
+                            Draft Reply to Supplier
+                        </h3>
+                        <p class="text-xs text-slate-500 mt-0.5">Editable. Agent generated this based on discrepancies.
+                        </p>
+                    </div>
+                    <button
+                        class="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg shadow-sm hover:bg-blue-700 transition-colors flex items-center gap-1">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
                         </svg>
-                        Submit to Pipeline
+                        Send
                     </button>
                 </div>
-            </form>
-
-            <!-- Loading State -->
-            <div id="loading-state"
-                class="hidden mt-8 flex flex-col items-center justify-center py-10 space-y-5 bg-blue-50/50 rounded-xl border border-blue-100">
-                <div class="spinner"></div>
-                <p id="loading-text" class="text-sm font-medium text-blue-700 animate-pulse text-center px-4">Pipeline
-                    Running: Claude 4.6 Sonnet extracting data...</p>
-            </div>
-
-            <!-- Error Terminal -->
-            <div id="error-terminal"
-                class="hidden mt-8 bg-gray-900 rounded-lg p-5 font-mono text-sm text-red-400 whitespace-pre-wrap shadow-inner border border-red-900/50">
-            </div>
-        </section>
-
-        <!-- Results Section (Hidden by Default) -->
-        <section id="results-container" class="hidden space-y-6 pb-12">
-
-            <!-- Execution Summary (Header Banner) -->
-            <div id="execution-summary"
-                class="glass-panel rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between border-l-8 transition-colors duration-300 gap-4">
-                <div>
-                    <h2 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Document ID</h2>
-                    <p id="doc-id-display" class="text-2xl font-semibold text-gray-900 font-mono"></p>
-                </div>
-                <div class="md:text-right">
-                    <h2 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Final Status</h2>
-                    <span id="final-status-badge"
-                        class="px-5 py-2.5 inline-flex text-sm leading-5 font-bold rounded-full shadow-sm">
-                        <!-- Badge injected via JS -->
-                    </span>
+                <div class="p-4 bg-slate-50 border-t border-slate-100">
+                    <textarea id="email-draft-area"
+                        class="w-full h-96 bg-white border border-slate-200 rounded-xl p-5 text-sm text-slate-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-y transition-shadow font-mono whitespace-pre-wrap leading-relaxed shadow-inner" spellcheck="false"></textarea>
                 </div>
             </div>
 
-            <div class="flex flex-col gap-6">
-                <!-- Audit & Validation Matrix Table -->
-                <div class="glass-panel rounded-2xl overflow-hidden shadow-sm flex flex-col w-full">
-                    <div class="px-6 py-5 border-b border-gray-100 bg-white/50">
-                        <h3 class="text-lg font-semibold text-gray-900">Audit & Validation Matrix</h3>
-                        <p class="text-sm text-gray-500 mt-1">Detailed field-by-field verification results</p>
-                    </div>
-                    <div class="overflow-x-auto flex-1 bg-white">
-                        <table class="min-w-full divide-y divide-gray-200">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th scope="col"
-                                        class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                                        Field Name</th>
-                                    <th scope="col"
-                                        class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                                        Expected Value</th>
-                                    <th scope="col"
-                                        class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                                        Extracted (Found)</th>
-                                    <th scope="col"
-                                        class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                                        Confidence</th>
-                                    <th scope="col"
-                                        class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                                        Status</th>
-                                </tr>
-                            </thead>
-                            <tbody id="audit-table-body" class="bg-white divide-y divide-gray-100">
-                                <!-- Rows injected via JS -->
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- Agent Output Panel -->
-                <div id="agent-output-panel" class="hidden glass-panel rounded-2xl p-6 flex flex-col">
-
-                    <!-- Email Draft Area (Escalation) -->
-                    <div id="email-draft-container" class="hidden flex-1 flex flex-col">
-                        <label class="block text-sm font-semibold text-gray-800 mb-2">Automated Remediation
-                            Draft</label>
-                        <textarea id="email-draft-area" readonly
-                            class="w-full bg-white border border-gray-200 rounded-xl p-4 text-sm text-gray-700 flex-1 min-h-[160px] focus:ring-0 resize-none shadow-sm font-mono"></textarea>
-                        <p class="text-xs text-gray-500 mt-2 italic">This payload represents the agent's explicit
-                            reasoning sent to the supplier.</p>
-                    </div>
-                </div>
-            </div>
-
-        </section>
-
+        </div>
+        
         <!-- Natural Language Query Section -->
-        <section class="glass-panel rounded-2xl p-6 md:p-8 mt-8 shadow-sm border border-gray-100">
+        <section class="glass-panel rounded-2xl p-6 mt-8 shadow-sm border border-slate-100">
             <div class="mb-5">
-                <h2 class="text-xl font-bold text-gray-900">Ask the Data Analyst</h2>
-                <p class="text-sm text-gray-500 mt-1">Query your processed shipments using natural language.</p>
+                <h2 class="text-xl font-bold text-slate-900">Ask the Data Analyst</h2>
+                <p class="text-sm text-slate-500 mt-1">Query your processed shipments using natural language.</p>
             </div>
             <form id="query-form" class="space-y-4">
                 <div class="relative">
                     <input type="text" id="query-input" placeholder="e.g., How many shipments were Auto-Approved today?"
-                        class="w-full pl-4 pr-12 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white shadow-sm placeholder-gray-400 text-gray-800" required>
+                        class="w-full pl-4 pr-12 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white shadow-sm placeholder-slate-400 text-slate-800" required>
                     <button type="submit" id="query-btn" class="absolute right-2 top-1.5 bottom-1.5 px-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                     </button>
@@ -200,11 +279,11 @@
             <!-- Query Result -->
             <div id="query-result-container" class="hidden mt-6 p-5 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
                 <h4 class="text-xs font-bold text-blue-800 uppercase tracking-wider mb-2">Answer</h4>
-                <p id="query-answer" class="text-gray-800 font-medium whitespace-pre-wrap"></p>
+                <p id="query-answer" class="text-slate-800 font-medium whitespace-pre-wrap"></p>
                 
                 <details class="mt-4">
-                    <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-700 font-medium">View Raw SQL</summary>
-                    <div class="mt-2 p-3 bg-gray-900 rounded-lg overflow-x-auto">
+                    <summary class="text-xs text-slate-500 cursor-pointer hover:text-slate-700 font-medium">View Raw SQL</summary>
+                    <div class="mt-2 p-3 bg-slate-900 rounded-lg overflow-x-auto">
                         <code id="query-sql" class="text-xs font-mono text-blue-300 whitespace-pre"></code>
                     </div>
                 </details>
@@ -213,289 +292,264 @@
             <!-- Query Error -->
             <div id="query-error" class="hidden mt-6 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700"></div>
         </section>
+        
     </div>
 
     <script>
-        const form = document.getElementById('upload-form');
-        const fileInput = document.getElementById('file-upload');
-        const fileNameDisplay = document.getElementById('file-name-display');
         const loadingState = document.getElementById('loading-state');
         const resultsContainer = document.getElementById('results-container');
         const errorTerminal = document.getElementById('error-terminal');
-        const submitBtn = document.getElementById('submit-btn');
-        const dropZone = document.getElementById('drop-zone');
 
-        // Handle drag and drop visuals
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            dropZone.addEventListener(eventName, preventDefaults, false);
-        });
 
-        function preventDefaults(e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
 
-        ['dragenter', 'dragover'].forEach(eventName => {
-            dropZone.addEventListener(eventName, () => {
-                dropZone.classList.add('border-blue-500', 'bg-blue-50');
-            }, false);
-        });
+        // --- Real-time Inbox Watcher via Server-Sent Events (SSE) ---
+        const eventSource = new EventSource("http://localhost:8000/events");
 
-        ['dragleave', 'drop'].forEach(eventName => {
-            dropZone.addEventListener(eventName, () => {
-                dropZone.classList.remove('border-blue-500', 'bg-blue-50');
-            }, false);
-        });
+        eventSource.onmessage = function (event) {
+            const data = JSON.parse(event.data);
 
-        dropZone.addEventListener('drop', (e) => {
-            let dt = e.dataTransfer;
-            let files = dt.files;
-
-            if (files.length > 0) {
-                fileInput.files = files;
-                updateFileName(files[0]);
+            if (data.type === "processing_started") {
+                // An email/batch just arrived in the inbox
+                errorTerminal.classList.add('hidden');
+                resultsContainer.classList.add('hidden');
+                loadingState.classList.remove('hidden');
             }
-        });
-
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                updateFileName(e.target.files[0]);
-            }
-        });
-
-        function updateFileName(file) {
-            fileNameDisplay.textContent = file.name;
-        }
-
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-
-            const file = fileInput.files[0];
-            if (!file) return;
-
-            // UI Reset
-            errorTerminal.classList.add('hidden');
-            resultsContainer.classList.add('hidden');
-            loadingState.classList.remove('hidden');
-            submitBtn.disabled = true;
-            submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
-
-            const formData = new FormData();
-            formData.append('file', file);
-
-            try {
-                const response = await fetch('http://localhost:8000/process-document', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
-                }
-
-                const data = await response.json();
-                renderResults(data);
-
-            } catch (error) {
-                errorTerminal.textContent = `[ERROR] Pipeline Execution Failed\n> ${error.message}\n> Please ensure the FastAPI backend is running at localhost:8000`;
-                errorTerminal.classList.remove('hidden');
-            } finally {
+            else if (data.type === "processing_complete") {
+                // The agent has finished extracting and validating
                 loadingState.classList.add('hidden');
-                submitBtn.disabled = false;
-                submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                renderResults(data);
             }
-        });
+        };
+
+        eventSource.onerror = function (err) {
+            console.error("EventSource failed:", err);
+            // Optionally attempt to reconnect or show an error
+        };
 
         function renderResults(data) {
-            // Unhide results
             resultsContainer.classList.remove('hidden');
+            resultsContainer.classList.add('animate-fade-in');
 
-            // Scroll to results
-            setTimeout(() => {
-                resultsContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }, 100);
-
-            // 1. Header Banner
-            const summaryBanner = document.getElementById('execution-summary');
-            const docIdDisplay = document.getElementById('doc-id-display');
-            const statusBadge = document.getElementById('final-status-badge');
-
-            docIdDisplay.textContent = data.document_id || 'DOC-UNKNOWN';
-
+            // Header Banner
             const finalStatus = data.final_status || 'UNKNOWN';
-            statusBadge.textContent = finalStatus;
+            document.getElementById('doc-id-display').textContent = data.document_id || 'DOC-UNKNOWN';
 
+            const badge = document.getElementById('final-status-badge');
+            const headerPanel = document.getElementById('result-header-panel');
+
+            badge.textContent = finalStatus.replace('_', ' ');
             if (finalStatus === 'VERIFIED') {
-                summaryBanner.className = 'glass-panel rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between border-l-8 border-green-500 bg-gradient-to-r from-green-50 to-transparent transition-colors duration-300 gap-4';
-                statusBadge.className = 'px-5 py-2.5 inline-flex text-sm leading-5 font-bold rounded-full shadow-sm bg-green-100 text-green-800 border border-green-200';
+                headerPanel.className = 'glass-panel rounded-2xl p-5 flex items-center justify-between border-l-4 border-green-500';
+                badge.className = 'px-3 py-1 text-xs font-bold rounded-full border bg-green-100 text-green-700 border-green-200';
             } else if (finalStatus === 'HUMAN_REVIEW') {
-                summaryBanner.className = 'glass-panel rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between border-l-8 border-red-500 bg-gradient-to-r from-red-50 to-transparent transition-colors duration-300 gap-4';
-                statusBadge.className = 'px-5 py-2.5 inline-flex text-sm leading-5 font-bold rounded-full shadow-sm bg-red-100 text-red-800 border border-red-200';
+                headerPanel.className = 'glass-panel rounded-2xl p-5 flex items-center justify-between border-l-4 border-red-500';
+                badge.className = 'px-3 py-1 text-xs font-bold rounded-full border bg-red-100 text-red-700 border-red-200';
             } else {
-                summaryBanner.className = 'glass-panel rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between border-l-8 border-gray-400 bg-gray-50 transition-colors duration-300 gap-4';
-                statusBadge.className = 'px-5 py-2.5 inline-flex text-sm leading-5 font-bold rounded-full shadow-sm bg-gray-100 text-gray-800 border border-gray-200';
+                headerPanel.className = 'glass-panel rounded-2xl p-5 flex items-center justify-between border-l-4 border-slate-400';
+                badge.className = 'px-3 py-1 text-xs font-bold rounded-full border bg-slate-100 text-slate-700 border-slate-200';
             }
 
-            const agentOutputPanel = document.getElementById('agent-output-panel');
-            const emailDraftContainer = document.getElementById('email-draft-container');
-            const emailDraftArea = document.getElementById('email-draft-area');
+            // Draft Reply
+            const draftPanel = document.getElementById('draft-panel');
+            if (data.drafted_email && data.drafted_email.trim() !== "") {
+                let emailText = data.drafted_email;
+                
+                // Sometimes Claude's fallback passes the whole JSON string. Let's try to extract just the email if so.
+                try {
+                    const parsed = JSON.parse(emailText);
+                    if (parsed && parsed.drafted_email) {
+                        emailText = parsed.drafted_email;
+                    }
+                } catch (e) {
+                    // Not a JSON string, which is perfectly fine.
+                }
 
-            if (finalStatus === 'HUMAN_REVIEW' && data.drafted_email) {
-                emailDraftArea.value = data.drafted_email;
-                emailDraftContainer.classList.remove('hidden');
-                agentOutputPanel.classList.remove('hidden');
+                // Replace any literal "\n" or "\\n" strings with actual newline characters
+                emailText = emailText.replace(/\\n/g, '\n');
+
+                document.getElementById('email-draft-area').value = emailText;
+                draftPanel.classList.remove('hidden');
             } else {
-                emailDraftContainer.classList.add('hidden');
-                agentOutputPanel.classList.add('hidden');
+                draftPanel.classList.add('hidden');
             }
 
+            // Audit List
+            const auditList = document.getElementById('audit-list');
+            auditList.innerHTML = '';
+            let rawResults = data.validation_report?.audit_results || data.audit_results;
+            let results = [];
 
-            // 3. Audit Table
-            const tbody = document.getElementById('audit-table-body');
-            tbody.innerHTML = ''; // clear previous
-
-            let auditResultsRaw = null;
-            if (data.validation_report && data.validation_report.audit_results) {
-                auditResultsRaw = data.validation_report.audit_results;
-            } else if (data.audit_results) {
-                auditResultsRaw = data.audit_results;
-            }
-
-            let auditResults = [];
-            if (auditResultsRaw) {
-                if (Array.isArray(auditResultsRaw)) {
-                    auditResults = auditResultsRaw;
-                } else if (typeof auditResultsRaw === 'object') {
-                    // Convert the backend dictionary to an array for the frontend table
-                    auditResults = Object.entries(auditResultsRaw).map(([key, val]) => ({
-                        field_name: key,
-                        expected_value: val.expected,
-                        extracted_value: val.found,
-                        status: val.status,
-                        confidence: val.confidence,
-                        error_message: val.explanation
-                    }));
+            if (rawResults) {
+                if (Array.isArray(rawResults)) results = rawResults;
+                else if (typeof rawResults === 'object') {
+                    // Flatten nested objects by slot
+                    let flatRes = [];
+                    for (const [slotKey, slotData] of Object.entries(rawResults)) {
+                        if (typeof slotData === 'object' && slotData !== null) {
+                            for (const [field, val] of Object.entries(slotData)) {
+                                if (val && typeof val === 'object' && 'status' in val) {
+                                    flatRes.push({
+                                        field_name: `${slotKey}: ${field}`,
+                                        expected_value: val.expected,
+                                        extracted_value: val.found,
+                                        status: val.status,
+                                        confidence: val.confidence,
+                                        error_message: val.explanation
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    results = flatRes;
                 }
             }
 
-            if (auditResults.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="4" class="px-6 py-8 text-center text-sm text-gray-500 bg-gray-50/50">No audit results returned for this document.</td></tr>`;
-            } else {
-                auditResults.forEach(result => {
-                    const tr = document.createElement('tr');
-                    tr.className = 'hover:bg-gray-50/80 transition-colors';
+            // Discrepancy Detail Logic
+            const discNoSelect = document.getElementById('no-selection-msg');
+            const discContent = document.getElementById('discrepancy-content');
 
-                    // Field Name
-                    const tdName = document.createElement('td');
-                    tdName.className = 'px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-800';
-                    tdName.textContent = result.field_name || '-';
+            // Reset Discrepancy panel
+            discNoSelect.classList.remove('hidden');
+            discContent.classList.add('hidden');
 
-                    // Expected Value
-                    const tdExpected = document.createElement('td');
-                    tdExpected.className = 'px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-mono';
-                    tdExpected.textContent = result.expected_value || '-';
+            if (results.length === 0) {
+                auditList.innerHTML = `<li class="p-4 text-center text-sm text-slate-500">No data extracted.</li>`;
+                return;
+            }
 
-                    // Found Value
-                    const tdFound = document.createElement('td');
-                    tdFound.className = 'px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-mono';
-                    tdFound.textContent = result.extracted_value || '-';
+            let firstMismatchItem = null;
 
-                    // Confidence Score
-                    const tdConf = document.createElement('td');
-                    tdConf.className = 'px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-mono';
-                    tdConf.textContent = result.confidence !== undefined && result.confidence !== null ? (result.confidence * 100).toFixed(1) + '%' : '-';
+            results.forEach((res, idx) => {
+                const li = document.createElement('li');
+                const isMismatch = res.status?.toLowerCase() === 'mismatch';
+                const isMatch = res.status?.toLowerCase() === 'match';
+                const isUncertain = res.status?.toLowerCase() === 'uncertain';
 
-                    // Status Badge
-                    const tdStatus = document.createElement('td');
-                    tdStatus.className = 'px-6 py-4 whitespace-nowrap text-sm';
+                let icon = '';
+                let bgClass = 'hover:bg-slate-50';
+                if (isMismatch) {
+                    icon = `<svg class="w-5 h-5 text-red-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`;
+                    bgClass = 'hover:bg-red-50 cursor-pointer bg-white border border-red-200';
+                } else if (isUncertain) {
+                    icon = `<svg class="w-5 h-5 text-orange-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>`;
+                    bgClass = 'hover:bg-orange-50 cursor-pointer bg-white border border-orange-200';
+                } else if (isMatch) {
+                    icon = `<svg class="w-5 h-5 text-green-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>`;
+                    bgClass = 'bg-white border border-slate-100';
+                }
 
-                    let badgeClass = 'px-2.5 py-1 inline-flex text-xs leading-5 font-bold rounded-md border ';
-                    let statusText = result.status || 'unknown';
-                    let tooltip = '';
+                li.className = `p-3 rounded-xl flex items-start justify-between transition-colors mb-2 ${bgClass}`;
 
-                    if (statusText.toLowerCase() === 'match') {
-                        badgeClass += 'bg-green-50 text-green-700 border-green-200';
-                    } else if (statusText.toLowerCase() === 'mismatch') {
-                        badgeClass += 'bg-red-50 text-red-700 border-red-200';
-                        if (result.error_message) {
-                            tooltip = result.error_message;
-                        }
-                    } else if (statusText.toLowerCase() === 'uncertain') {
-                        badgeClass += 'bg-orange-50 text-orange-700 border-orange-200';
-                    } else {
-                        badgeClass += 'bg-gray-50 text-gray-700 border-gray-200';
-                    }
+                let confStr = res.confidence ? Math.round(res.confidence * 100) + '%' : '--';
 
-                    // Construct the badge HTML
-                    let badgeHtml = `<span class="${badgeClass}" title="${tooltip}">${statusText.toUpperCase()}</span>`;
+                // Color code the confidence score
+                let confColor = 'bg-slate-100 text-slate-600';
+                if (res.confidence >= 0.9) confColor = 'bg-green-100 text-green-800 border border-green-200';
+                else if (res.confidence >= 0.7) confColor = 'bg-orange-100 text-orange-800 border border-orange-200';
+                else if (res.confidence) confColor = 'bg-red-100 text-red-800 border border-red-200';
 
-                    // If mismatch and has error message, display it beneath
-                    if (statusText.toLowerCase() === 'mismatch' && tooltip) {
-                        badgeHtml += `<div class="text-[11px] text-red-500 mt-1 max-w-[200px] truncate" title="${tooltip}">${tooltip}</div>`;
-                    }
+                li.innerHTML = `
+                    <div class="flex items-start gap-3 w-full pr-4">
+                        <div class="mt-0.5">${icon}</div>
+                        <div class="w-full">
+                            <p class="text-[15px] font-bold text-slate-900 leading-tight">${res.field_name}</p>
+                            <p class="text-sm font-bold text-slate-700 font-mono mt-1 whitespace-pre-wrap break-words">${res.extracted_value || 'N/A'}</p>
+                        </div>
+                    </div>
+                    <div class="text-right shrink-0 mt-1">
+                        <span class="text-sm font-bold px-2.5 py-1 rounded-md shadow-sm ${confColor}">
+                            ${confStr}
+                        </span>
+                    </div>
+                `;
 
-                    tdStatus.innerHTML = badgeHtml;
+                if (isMismatch || isUncertain) {
+                    if (!firstMismatchItem) firstMismatchItem = { res, el: li };
+                    li.addEventListener('click', () => {
+                        // Highlight selection
+                        document.querySelectorAll('#audit-list li').forEach(el => el.classList.remove('ring-2', 'ring-red-400', 'ring-offset-1', 'ring-orange-400'));
+                        if (isMismatch) li.classList.add('ring-2', 'ring-red-400', 'ring-offset-1');
+                        if (isUncertain) li.classList.add('ring-2', 'ring-orange-400', 'ring-offset-1');
 
-                    tr.appendChild(tdName);
-                    tr.appendChild(tdExpected);
-                    tr.appendChild(tdFound);
-                    tr.appendChild(tdConf);
-                    tr.appendChild(tdStatus);
+                        showDiscrepancy(res);
+                    });
+                }
 
-                    tbody.appendChild(tr);
-                });
+                auditList.appendChild(li);
+            });
+
+            if (firstMismatchItem) {
+                firstMismatchItem.el.click(); // Auto select first discrepancy
+            }
+
+            function showDiscrepancy(res) {
+                discNoSelect.classList.add('hidden');
+                discContent.classList.remove('hidden');
+                discContent.classList.add('animate-fade-in');
+
+                document.getElementById('detail-field-name').textContent = res.field_name;
+                document.getElementById('detail-expected').textContent = res.expected_value || 'Not specified';
+                document.getElementById('detail-found').textContent = res.extracted_value || 'Not found';
+                document.getElementById('detail-reason').textContent = res.error_message || 'Value extracted does not match expected criteria.';
+
+                // Set mock snippet based on field name
+                const snippetImg = document.getElementById('snippet-img');
+                const encodedField = encodeURIComponent(res.field_name);
+                snippetImg.src = `https://placehold.co/400x100/1e293b/ffffff?text=${encodedField}+Snippet`;
             }
         }
 
         // Query Handler
         const queryForm = document.getElementById('query-form');
-        const queryInput = document.getElementById('query-input');
-        const queryBtn = document.getElementById('query-btn');
-        const queryLoading = document.getElementById('query-loading');
-        const queryResultContainer = document.getElementById('query-result-container');
-        const queryAnswer = document.getElementById('query-answer');
-        const querySql = document.getElementById('query-sql');
-        const queryError = document.getElementById('query-error');
+        if (queryForm) {
+            const queryInput = document.getElementById('query-input');
+            const queryBtn = document.getElementById('query-btn');
+            const queryLoading = document.getElementById('query-loading');
+            const queryResultContainer = document.getElementById('query-result-container');
+            const queryAnswer = document.getElementById('query-answer');
+            const querySql = document.getElementById('query-sql');
+            const queryError = document.getElementById('query-error');
 
-        queryForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const question = queryInput.value.trim();
-            if (!question) return;
+            queryForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const question = queryInput.value.trim();
+                if (!question) return;
 
-            // UI Reset
-            queryBtn.disabled = true;
-            queryBtn.classList.add('opacity-50', 'cursor-not-allowed');
-            queryLoading.classList.remove('hidden');
-            queryResultContainer.classList.add('hidden');
-            queryError.classList.add('hidden');
+                // UI Reset
+                queryBtn.disabled = true;
+                queryBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                queryLoading.classList.remove('hidden');
+                queryResultContainer.classList.add('hidden');
+                queryError.classList.add('hidden');
 
-            try {
-                const response = await fetch('http://localhost:8000/query', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ question })
-                });
+                try {
+                    const response = await fetch('http://localhost:8000/query', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ question })
+                    });
 
-                if (!response.ok) {
-                    const errData = await response.json();
-                    throw new Error(errData.message || `HTTP Error: ${response.status}`);
+                    if (!response.ok) {
+                        const errData = await response.json().catch(() => ({}));
+                        throw new Error(errData.message || `HTTP Error: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    
+                    queryAnswer.textContent = data.answer;
+                    querySql.textContent = data.raw_sql;
+                    queryResultContainer.classList.remove('hidden');
+
+                } catch (error) {
+                    queryError.textContent = `Error executing query: ${error.message}`;
+                    queryError.classList.remove('hidden');
+                } finally {
+                    queryLoading.classList.add('hidden');
+                    queryBtn.disabled = false;
+                    queryBtn.classList.remove('opacity-50', 'cursor-not-allowed');
                 }
-
-                const data = await response.json();
-                
-                queryAnswer.textContent = data.answer;
-                querySql.textContent = data.raw_sql;
-                queryResultContainer.classList.remove('hidden');
-
-            } catch (error) {
-                queryError.textContent = `Error executing query: ${error.message}`;
-                queryError.classList.remove('hidden');
-            } finally {
-                queryLoading.classList.add('hidden');
-                queryBtn.disabled = false;
-                queryBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-            }
-        });
+            });
+        }
     </script>
 </body>
 

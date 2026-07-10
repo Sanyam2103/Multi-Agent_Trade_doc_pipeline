@@ -3,7 +3,10 @@ from dotenv import load_dotenv
 import base64
 import json
 import os
-from typing import Dict, Any, Union, List
+import uuid
+import concurrent.futures
+import re
+from typing import Dict, Any, Union, List, Optional
 
 # pyrefly: ignore [missing-import]
 import anthropic
@@ -12,7 +15,7 @@ from pydantic import ValidationError
 # pyrefly: ignore [missing-import]
 from pdf2image import convert_from_path
 
-from models.state import DocumentState
+from models.state import ShipmentState, DocumentSlot
 from models.schemas import get_schema_for_doc
 from utils.ocr_tools import clean_image_with_opencv, extract_tables_with_textract
 from utils.file_handlers import convert_pdf_to_image
@@ -44,7 +47,7 @@ def _call_claude_classifier(file_path: str) -> str:
     
     system_prompt = (
         'You are a document classifier. Your only task is to identify if the given document is a '
-        '"BILL_OF_LADING" or a "COMMERCIAL_INVOICE". Respond with ONLY the document type name as a '
+        '"BILL_OF_LADING", "COMMERCIAL_INVOICE", or "PACKING_LIST". Respond with ONLY the document type name as a '
         'raw string, with no other text, conversation, or markdown formatting.'
     )
     
@@ -85,7 +88,7 @@ def _call_claude_classifier(file_path: str) -> str:
         )
         classification = response.content[0].text.strip().replace('"', '')
         print(f"Claude classification result: '{classification}'")
-        if "BILL_OF_LADING" in classification or "COMMERCIAL_INVOICE" in classification:
+        if "BILL_OF_LADING" in classification or "COMMERCIAL_INVOICE" in classification or "PACKING_LIST" in classification:
             return classification
         else:
             raise ValueError(f"Unexpected classification result: {classification}")
@@ -127,7 +130,6 @@ def _call_claude_extractor(
     )
     
     user_content: List[Dict[str, Any]] = []
-    
     image_to_process_path = file_path
     
     # If the document is a PDF, convert its first page to a temporary image for extraction
@@ -136,9 +138,7 @@ def _call_claude_extractor(
         # Create a temporary directory if it doesn't exist
         temp_dir = "temp_images"
         os.makedirs(temp_dir, exist_ok=True)
-        
-        # Define a path for the temporary image
-        temp_image_filename = f"temp_{os.path.basename(file_path)}.jpg"
+        temp_image_filename = f"temp_{uuid.uuid4().hex[:8]}_{os.path.basename(file_path)}.jpg"
         image_to_process_path = os.path.join(temp_dir, temp_image_filename)
 
         try:
@@ -184,52 +184,43 @@ def _call_claude_extractor(
         if image_to_process_path != file_path and os.path.exists(image_to_process_path):
             os.remove(image_to_process_path)
 
-
-
-def extractor_node(state: DocumentState) -> DocumentState:
-    """The core agent for document classification and data extraction."""
-    print("\n---EXTRACTOR & CLASSIFIER NODE---")
+def process_single_file(file_path: str, existing_slot: Optional[DocumentSlot] = None) -> DocumentSlot:
+    """Processes a single document file, handling classification and extraction."""
+    doc_id = existing_slot.get("document_id") if existing_slot else str(uuid.uuid4())
+    doc_type = existing_slot.get("document_type") if existing_slot else None
+    tier = existing_slot.get("extraction_tier", 1) if existing_slot else 1
     
-    doc_path = state.get("document_path")
-    if not doc_path:
-        state["final_status"] = "ERROR: Document path missing."
-        return state
-
-    if not state.get("document_type"):
+    if not doc_type:
         try:
-            state["document_type"] = _call_claude_classifier(doc_path)
-        except (ConnectionError, ValueError, IOError) as e:
+            doc_type = _call_claude_classifier(file_path)
+        except Exception as e:
             print(f"FATAL: Classification failed: {e}")
-            state["final_status"] = "ERROR_CLASSIFICATION_FAILED"
-            return state
+            return {"document_id": doc_id, "document_path": file_path, "document_type": "ERROR", "extraction_tier": tier, "current_confidence": 0.0, "raw_text_fallback": str(e), "extracted_data": None}
             
     try:
-        target_schema = get_schema_for_doc(state["document_type"])
+        target_schema = get_schema_for_doc(doc_type)
     except ValueError as e:
-        state["final_status"] = f"ERROR: {e}"
-        return state
+        return {"document_id": doc_id, "document_path": file_path, "document_type": doc_type, "extraction_tier": tier, "current_confidence": 0.0, "raw_text_fallback": str(e), "extracted_data": None}
 
-    tier = state.get("extraction_tier", 1)
-    print(f"Executing extraction tier {tier}...")
+    print(f"Executing extraction tier {tier} for {doc_type}...")
+    avg_conf = 0.0
+    extracted_data = None
     try:
         raw_json = ""
         if tier == 1:
-            print("Tier 1: Direct extraction from native document.")
-            raw_json = _call_claude_extractor(target_schema.model_json_schema(), file_path=doc_path)
+            raw_json = _call_claude_extractor(target_schema.model_json_schema(), file_path=file_path)
         elif tier == 2:
-            print("Tier 2: Lazy PDF conversion and image cleaning.")
-            image_path = convert_pdf_to_image(doc_path)
+            image_path = convert_pdf_to_image(file_path)
             if image_path:
                 cleaned_image_path = clean_image_with_opencv(image_path)
                 if cleaned_image_path:
                     raw_json = _call_claude_extractor(target_schema.model_json_schema(), file_path=cleaned_image_path)
         elif tier == 3:
-            print("Tier 3: Table extraction with Textract.")
-            with open(doc_path, "rb") as f:
+            with open(file_path, "rb") as f:
                 doc_bytes = f.read()
             table_text = extract_tables_with_textract(doc_bytes)
             prompt = f"Extract data based on the document's content, paying special attention to the following tables:\n\n{table_text}"
-            raw_json = _call_claude_extractor(target_schema.model_json_schema(), text_prompt=prompt, file_path=doc_path)
+            raw_json = _call_claude_extractor(target_schema.model_json_schema(), text_prompt=prompt, file_path=file_path)
         
         if not raw_json:
             raise ValueError("LLM response was empty.")
@@ -237,90 +228,260 @@ def extractor_node(state: DocumentState) -> DocumentState:
         extracted_data = json.loads(raw_json)
         target_schema.model_validate(extracted_data)
         
-        state["extracted_data"] = extracted_data
-        
-        # Calculate average confidence across all extracted fields
         confidences = []
         for key, field_obj in extracted_data.items():
             if isinstance(field_obj, dict) and "confidence" in field_obj:
                 confidences.append(field_obj["confidence"])
         
         avg_conf = sum(confidences) / len(confidences) if confidences else 0.0
-        state["current_confidence"] = avg_conf
-        print(f"Extraction successful and validated. Average confidence: {avg_conf:.2f}")
+        print(f"Extraction successful for {doc_type}. Average confidence: {avg_conf:.2f}")
+        print(f"Extracted Data for {doc_type}:\n{json.dumps(extracted_data, indent=2)}")
 
-    except (json.JSONDecodeError, ValidationError, ValueError, ConnectionError, IOError) as e:
-        print(f"An error occurred during tier {tier}: {e}")
-        state["current_confidence"] = state.get("current_confidence", 0.4) - 0.1
+    except Exception as e:
+        print(f"An error occurred during tier {tier} for {doc_type}: {e}")
+        avg_conf = existing_slot.get("current_confidence", 0.4) - 0.1 if existing_slot else 0.0
+
+    return {
+        "document_id": doc_id,
+        "document_path": file_path,
+        "document_type": doc_type,
+        "extraction_tier": tier + 1,
+        "current_confidence": avg_conf,
+        "raw_text_fallback": None,
+        "extracted_data": extracted_data
+    }
+
+def extractor_node(state: ShipmentState) -> ShipmentState:
+    """Orchestrates concurrent extraction for all files in the batch."""
+    print("\n---EXTRACTOR NODE (MULTI-SLOT BARRIER)---")
     
-    state["extraction_tier"] += 1
-    return state
-
-def validator_node(state: DocumentState) -> DocumentState:
-    """
-    Validates the extracted data against customer-specific business rules.
-
-    This node uses the Contract Reconciliation Engine to perform a strict,
-    field-by-field audit of the extracted data against a customer's profile.
-    It attaches a detailed validation report to the state.
-    """
-    print("\n---VALIDATOR NODE---")
+    files_to_process = []
     
-    extracted_data = state.get("extracted_data")
-    if extracted_data:
-        print("Detailed Extracted Data & Confidence Scores:")
-        print(json.dumps(extracted_data, indent=2))
-        
-    if not extracted_data:
-        # If there's no data, create a validation report indicating the failure.
-        state["validation_report"] = {
-            "is_valid": False,
-            "audit_results": {"error": "No data was extracted from the document."}
-        }
-        print("Validation failed: No data extracted.")
+    # 1. New files from unprocessed_files
+    unprocessed = state.get("unprocessed_files", [])
+    for f in unprocessed:
+        files_to_process.append((f, None))
+    state["unprocessed_files"] = [] # Clear them since we are processing them
+    
+    # 2. Existing slots that need retry (confidence < 0.7 and tier < 4)
+    for slot_key in ["commercial_invoice", "bill_of_lading", "packing_list"]:
+        slot = state.get(slot_key)
+        if slot and slot.get("current_confidence", 0.0) < 0.7 and slot.get("extraction_tier", 1) < 4:
+            files_to_process.append((slot["document_path"], slot))
+            
+    if not files_to_process:
+        print("No files to process or retry.")
         return state
 
-    # For testing, we assume a default customer context.
-    # In a production scenario, this would be dynamically determined.
-    customer_id = 'GOCOMET_CUSTOMER_01'
-    expected_rules = get_customer_rules(customer_id)
+    print(f"Starting concurrent extraction for {len(files_to_process)} files...")
+    
+    results = []
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = [executor.submit(process_single_file, path, slot) for path, slot in files_to_process]
+        for future in concurrent.futures.as_completed(futures):
+            results.append(future.result())
 
-    # Perform the audit using the core reconciliation engine
-    validation_results = audit_extracted_fields(extracted_data, expected_rules)
-    state['validation_report'] = validation_results
-    
-    print("\nDetailed Audit Report:")
-    print(json.dumps(validation_results.get("audit_results", {}), indent=2))
-    
-    if not validation_results["is_valid"]:
-        print("Validation failed. Detailed report generated.")
-    else:
-        print("Validation successful. All fields match the customer profile.")
-        
+    # Sort results into slots based on document_type
+    for res in results:
+        doc_type = res["document_type"]
+        if "COMMERCIAL_INVOICE" in doc_type:
+            state["commercial_invoice"] = res
+        elif "BILL_OF_LADING" in doc_type:
+            state["bill_of_lading"] = res
+        elif "PACKING_LIST" in doc_type:
+            state["packing_list"] = res
+        else:
+            print(f"Warning: Could not sort file {res['document_path']} with type {doc_type}")
+            
     return state
 
-def router_node(state: DocumentState) -> DocumentState:
-    """Sets the final status and drafts an email or reasoning if review is needed."""
-    print("\n---ROUTER NODE---")
-    report = state.get("validation_report", {})
-    audit_results = report.get("audit_results", {})
+def extract_float(val: Any) -> Optional[float]:
+    if val is None:
+        return None
+    s = str(val)
+    matches = re.findall(r"[-+]?\d*\.\d+|\d+", s)
+    if matches:
+        try:
+            return float(matches[0])
+        except ValueError:
+            return None
+    return None
+
+def clean_str(val: Any) -> str:
+    if val is None:
+        return ""
+    return str(val).lower().strip().replace(".", "").replace(",", "")
+
+def validator_node(state: ShipmentState) -> ShipmentState:
+    print("\n---VALIDATOR NODE (PROFILE & CROSS-VALIDATION)---")
+    
+    # --- 1. Customer Profile Validation ---
+    customer_id = 'GOCOMET_CUSTOMER_01'
+    expected_rules = get_customer_rules(customer_id)
+    
+    all_audit_results = {}
+    profile_is_valid = True
+    
+    for slot_key in ["commercial_invoice", "bill_of_lading", "packing_list"]:
+        slot = state.get(slot_key)
+        if slot and slot.get("extracted_data"):
+            doc_rules = expected_rules.get(slot_key, {})
+            val_result = audit_extracted_fields(slot["extracted_data"], doc_rules)
+            all_audit_results[slot_key] = val_result["audit_results"]
+            if not val_result["is_valid"]:
+                profile_is_valid = False
+        elif slot:
+            all_audit_results[slot_key] = {"error": "Extraction failed for this document."}
+            profile_is_valid = False
+
+    state["validation_report"] = {
+        "is_valid": profile_is_valid,
+        "audit_results": all_audit_results
+    }
+    
+    print(f"Validation Report Results: {profile_is_valid}")
+    print(f"Detailed Validation Report:\n{json.dumps(all_audit_results, indent=2)}")
+        
+    # --- 2. Cross Validation ---
+    errors = []
+    
+    # Step 1: Safe Extraction & Existence Guardrails
+    inv_slot = state.get("commercial_invoice") or {}
+    pl_slot = state.get("packing_list") or {}
+    bol_slot = state.get("bill_of_lading") or {}
+    
+    inv = inv_slot.get("extracted_data") or {}
+    pl = pl_slot.get("extracted_data") or {}
+    bol = bol_slot.get("extracted_data") or {}
+    
+    def get_val(doc_dict: dict, field: str):
+        f = doc_dict.get(field)
+        if isinstance(f, dict):
+            return f.get("value")
+        return f
+
+    if not inv:
+        errors.append("CRITICAL: Missing complete document payload for Commercial Invoice.")
+    if not pl:
+        errors.append("CRITICAL: Missing complete document payload for Packing List.")
+    if not bol:
+        errors.append("CRITICAL: Missing complete document payload for Bill of Lading.")
+        
+    if errors:
+        state["cross_validation_errors"] = errors
+        state["cross_validation_report"] = {"is_valid": False, "issues": errors}
+        state["final_status"] = "AMENDMENT_REQUIRED"
+        return state
+
+    # Field retrieval
+    inv_inv_no = get_val(inv, "invoice_number")
+    pl_inv_no = get_val(pl, "invoice_number")
+    
+    inv_consignee = get_val(inv, "consignee_name")
+    pl_consignee = get_val(pl, "consignee_name")
+    bol_consignee = get_val(bol, "consignee_name")
+    
+    inv_exporter = get_val(inv, "exporter_name")
+    pl_exporter = get_val(pl, "exporter_name")
+    bol_shipper = get_val(bol, "shipper_name")
+    
+    pl_weight = get_val(pl, "total_gross_weight")
+    bol_weight = get_val(bol, "gross_weight")
+    
+    pl_packages = get_val(pl, "total_package_count")
+    bol_packages = get_val(bol, "total_package_count")
+    
+    inv_hs = get_val(inv, "hs_code")
+    pl_hs = get_val(pl, "hs_code")
+
+    # Step 2: Cross-Validation Rule Engine
+    
+    # Rule 1: Document Linkage
+    if inv_inv_no is None: errors.append("MISSING FIELD: invoice_number was not found in Commercial Invoice.")
+    if pl_inv_no is None: errors.append("MISSING FIELD: invoice_number was not found in Packing List.")
+    if inv_inv_no and pl_inv_no and clean_str(inv_inv_no) != clean_str(pl_inv_no):
+        errors.append("DOCUMENT LINKAGE MISMATCH: Invoice number varies between Invoice and Packing List.")
+
+    # Rule 2 & 3: Entity Consistency
+    if inv_consignee is None: errors.append("MISSING FIELD: consignee_name was not found in Commercial Invoice.")
+    if pl_consignee is None: errors.append("MISSING FIELD: consignee_name was not found in Packing List.")
+    if bol_consignee is None: errors.append("MISSING FIELD: consignee_name was not found in Bill of Lading.")
+    
+    c_inv_cons, c_pl_cons, c_bol_cons = clean_str(inv_consignee), clean_str(pl_consignee), clean_str(bol_consignee)
+    if c_inv_cons and c_pl_cons and c_bol_cons:
+        if not (c_inv_cons == c_pl_cons == c_bol_cons):
+            errors.append("IDENTITY MISMATCH: The Consignee or Exporter name varies across the shipment documents.")
+
+    c_inv_exp, c_pl_exp, c_bol_ship = clean_str(inv_exporter), clean_str(pl_exporter), clean_str(bol_shipper)
+    exporters = [x for x in [c_inv_exp, c_pl_exp, c_bol_ship] if x]
+    if exporters and len(set(exporters)) > 1:
+        if "IDENTITY MISMATCH: The Consignee or Exporter name varies across the shipment documents." not in errors:
+            errors.append("IDENTITY MISMATCH: The Consignee or Exporter name varies across the shipment documents.")
+
+    # Rule 4 & 5: Physical Logistics
+    if pl_weight is None: errors.append("MISSING FIELD: total_gross_weight was not found in Packing List.")
+    if bol_weight is None: errors.append("MISSING FIELD: gross_weight was not found in Bill of Lading.")
+    w_pl, w_bol = extract_float(pl_weight), extract_float(bol_weight)
+    if w_pl is not None and w_bol is not None and w_pl != w_bol:
+        errors.append("PHYSICAL MISMATCH: Declared weights or package counts do not match between the Packing List and Carrier BOL.")
+
+    if pl_packages is None: errors.append("MISSING FIELD: total_package_count was not found in Packing List.")
+    if bol_packages is None: errors.append("MISSING FIELD: total_package_count was not found in Bill of Lading.")
+    p_pl, p_bol = extract_float(pl_packages), extract_float(bol_packages)
+    if p_pl is not None and p_bol is not None and p_pl != p_bol:
+        if "PHYSICAL MISMATCH: Declared weights or package counts do not match between the Packing List and Carrier BOL." not in errors:
+            errors.append("PHYSICAL MISMATCH: Declared weights or package counts do not match between the Packing List and Carrier BOL.")
+
+    # Rule 6: Regulatory Alignment
+    if inv_hs is None: errors.append("MISSING FIELD: hs_code was not found in Commercial Invoice.")
+    if pl_hs is None: errors.append("MISSING FIELD: hs_code was not found in Packing List.")
+    if inv_hs and pl_hs:
+        if str(inv_hs)[:6] != str(pl_hs)[:6]:
+            errors.append("CUSTOMS MISMATCH: The first 6 digits of the HS classification codes do not align.")
+
+    # Step 3: State Update & Routing
+    if len(errors) > 0:
+        state["cross_validation_errors"] = errors
+        state["cross_validation_report"] = {"is_valid": False, "issues": errors}
+        state["final_status"] = "AMENDMENT_REQUIRED"
+    else:
+        state["cross_validation_errors"] = []
+        state["cross_validation_report"] = {"is_valid": True, "issues": []}
+        state["final_status"] = "VERIFIED"
+
+    return state
+
+def router_node(state: ShipmentState) -> ShipmentState:
+    print("\n---ROUTER NODE (BATCH LEVEL)---")
+    
+    val_report = state.get("validation_report", {})
+    cross_val_report = state.get("cross_validation_report", {})
     
     mismatches = []
     uncertainties = []
     
-    for field, result in audit_results.items():
-        if result.get("status") == "mismatch":
-            mismatches.append({"field": field, **result})
-        elif result.get("status") == "uncertain":
-            uncertainties.append({"field": field, **result})
+    # Aggregate issues from profile validation
+    for doc_type, results in val_report.get("audit_results", {}).items():
+        if "error" in results:
+            mismatches.append({"document": doc_type, "error": results["error"]})
+            continue
             
+        for field, result in results.items():
+            if result.get("status") == "mismatch":
+                mismatches.append({"document": doc_type, "field": field, **result})
+            elif result.get("status") == "uncertain":
+                uncertainties.append({"document": doc_type, "field": field, **result})
+                
+    # Add cross-validation issues
+    for issue in cross_val_report.get("issues", []):
+        mismatches.append({"document": "CROSS_VALIDATION", "error": issue})
+
     try:
-        # OUTCOME 1: Auto-Approve
         if not mismatches and not uncertainties:
             state["final_status"] = "VERIFIED"
-            state["agent_reasoning"] = "Automated clearance: All mandatory logistics fields match the authoritative customer contract profile exactly with 100% compliance."
+            state["agent_reasoning"] = "Automated clearance: All documents match profile and pass cross-validation perfectly."
             state["drafted_email"] = None
-            print("Status set to VERIFIED. Data securely written to the primary relational warehouse.")
+            print("Batch Status VERIFIED.")
             
         # OUTCOME 2: Flag for Human Review
         elif not mismatches and uncertainties:
@@ -341,15 +502,14 @@ def router_node(state: DocumentState) -> DocumentState:
             )
             state["agent_reasoning"] = response.content[0].text.strip()
             state["drafted_email"] = None
-            print("Status set to HUMAN_REVIEW. Reasoning generated.")
+            print("Batch Status HUMAN_REVIEW.")
             
         # OUTCOME 3: Draft Amendment Request
         else:
             state["final_status"] = "AMENDMENT_REQUIRED"
-            
             prompt = (
                 "You are an expert logistics compliance agent. "
-                "The following document fields completely mismatched the expected customer contract:\n"
+                "The following shipment batch completely mismatched the expected contract or cross-validation rules:\n"
                 f"{json.dumps(mismatches, indent=2)}\n\n"
                 "You must return ONLY a raw JSON object (without markdown wrappers or code blocks) containing two keys:\n"
                 "1. 'agent_reasoning': A sharp internal technical explanation summarizing the compliance failure.\n"
@@ -360,25 +520,39 @@ def router_node(state: DocumentState) -> DocumentState:
                 max_tokens=1024,
                 messages=[{"role": "user", "content": prompt}]
             )
+            raw_text = response.content[0].text.strip()
+            
+            # Clean up markdown formatting if present
+            if raw_text.startswith("```json"):
+                raw_text = raw_text[7:]
+            elif raw_text.startswith("```"):
+                raw_text = raw_text[3:]
+            if raw_text.endswith("```"):
+                raw_text = raw_text[:-3]
+            
+            raw_text = raw_text.strip()
             
             try:
-                # Attempt to parse the JSON response from Claude
-                raw_text = response.content[0].text.strip()
-                # Clean up if Claude included markdown
-                if raw_text.startswith("```json"):
-                    raw_text = raw_text[7:]
-                if raw_text.startswith("```"):
-                    raw_text = raw_text[3:]
-                if raw_text.endswith("```"):
-                    raw_text = raw_text[:-3]
-                    
-                result_json = json.loads(raw_text)
+                # Use strict=False to allow unescaped newlines which Claude often generates in long emails
+                result_json = json.loads(raw_text, strict=False)
                 state["agent_reasoning"] = result_json.get("agent_reasoning", "Failed to parse reasoning.")
                 state["drafted_email"] = result_json.get("drafted_email", "Failed to parse email.")
-            except json.JSONDecodeError:
-                state["agent_reasoning"] = "System encountered mismatches but failed to generate structured reasoning."
-                state["drafted_email"] = f"Mismatches detected: {json.dumps(mismatches)}"
+            except json.JSONDecodeError as e:
+                print(f"JSON Parse Error: {e}\nAttempting manual extraction from Claude's response.")
+                # Fallback: if Claude failed to output valid JSON, just use the raw text as the email
+                state["agent_reasoning"] = "System encountered mismatches. See drafted email for details."
                 
+                import re
+                # Match anything after "drafted_email": " until the end, even if truncated
+                email_match = re.search(r'"drafted_email"\s*:\s*"(.*)', raw_text, re.DOTALL)
+                if email_match:
+                    email_str = email_match.group(1)
+                    # Remove trailing quote and bracket if they exist
+                    if email_str.endswith('"}'): email_str = email_str[:-2]
+                    elif email_str.endswith('"'): email_str = email_str[:-1]
+                    state["drafted_email"] = email_str.replace('\\n', '\n')
+                else:
+                    state["drafted_email"] = raw_text
             print("Status set to AMENDMENT_REQUIRED. Amendment drafted.")
 
     except Exception as e:
