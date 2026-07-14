@@ -238,7 +238,7 @@ async def process_document(file: UploadFile = File(...)):
 @app.get("/", response_class=FileResponse)
 def read_root():
     # Serve the main HTML file from the root directory
-    return FileResponse("../index.html")
+    return FileResponse("index.html")
 
 @app.get("/events")
 async def sse_events(request: Request):
