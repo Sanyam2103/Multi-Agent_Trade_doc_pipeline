@@ -91,7 +91,17 @@
         </div>
     </header>
 
+    
     <div class="w-full max-w-6xl space-y-6">
+
+        <!-- Drag and Drop Upload Zone -->
+        <div id="drop-zone" class="w-full h-48 border-2 border-dashed border-slate-300 rounded-2xl flex flex-col items-center justify-center text-center cursor-pointer hover:border-blue-500 hover:bg-slate-50 transition-colors duration-300">
+            <svg class="w-12 h-12 text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-4-4V7a4 4 0 014-4h4l2 3h4a4 4 0 014 4v5a4 4 0 01-4 4H7z"></path></svg>
+            <p class="text-slate-600 font-medium">Drag & Drop your trade documents here</p>
+            <p class="text-sm text-slate-400 mt-1">Upload multiple PDFs, PNGs, or JPGs in one batch</p>
+            <input type="file" id="file-input" class="hidden" accept=".pdf,.png,.jpg,.jpeg" multiple>
+        </div>
+
 
         <!-- Agent Processing State (Incoming) -->
         <div id="loading-state"
@@ -301,6 +311,71 @@
         const errorTerminal = document.getElementById('error-terminal');
 
 
+
+
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+
+        // --- Drag and Drop Logic ---
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('border-blue-500', 'bg-slate-50');
+        });
+
+        dropZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-blue-500', 'bg-slate-50');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-blue-500', 'bg-slate-50');
+            const files = e.dataTransfer.files;
+            if (files.length) {
+                handleFileUpload(files);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length) {
+                handleFileUpload(e.target.files);
+            }
+        });
+
+        async function handleFileUpload(files) {
+            const formData = new FormData();
+            for (const file of files) {
+                formData.append('files', file);
+            }
+
+            // Show immediate UI feedback
+            loadingState.classList.remove('hidden');
+            resultsContainer.classList.add('hidden');
+            errorTerminal.classList.add('hidden');
+
+            try {
+                // This endpoint will now immediately return, and the SSE will provide the final result
+                const response = await fetch('/process-document', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json().catch(() => ({}));
+                    throw new Error(errData.message || `HTTP Error: ${response.status}`);
+                }
+                
+                // The SSE listener will handle the rest
+                console.log("Files uploaded successfully. Waiting for SSE events.");
+
+            } catch (error) {
+                errorTerminal.textContent = `Upload failed: ${error.message}`;
+                errorTerminal.classList.remove('hidden');
+                loadingState.classList.add('hidden');
+            }
+        }
 
         // --- Real-time Inbox Watcher via Server-Sent Events (SSE) ---
         const eventSource = new EventSource("/events");

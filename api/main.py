@@ -1,3 +1,4 @@
+from typing import List
 import os
 import uuid
 import asyncio
@@ -166,73 +167,41 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.post("/process-document")
-async def process_document(file: UploadFile = File(...)):
+@app.post("/process-document", status_code=status.HTTP_202_ACCEPTED)
+async def process_document_upload(files: List[UploadFile] = File(...)):
     """
-    Accepts a document, saves it locally, and kicks off the asynchronous
-    LangGraph processing pipeline.
+    Accepts multiple document uploads, saves them to a unique sub-directory in the 'inbox',
+    and returns immediately. The background watcher will pick them up for processing as a single batch.
     """
     try:
-        thread_id = uuid.uuid4()
-        file_id = str(thread_id)
+        # Create a unique batch ID and a corresponding directory in the inbox for this upload session
+        batch_id = str(uuid.uuid4())
+        batch_dir = os.path.join(INBOX_DIR, batch_id)
+        os.makedirs(batch_dir, exist_ok=True)
         
-        # Sanitize filename and create a unique path
-        sanitized_filename = "".join(c for c in file.filename if c.isalnum() or c in ['.', '_', '-']).strip()
-        file_location = os.path.join(UPLOADS_DIR, f"{file_id}_{sanitized_filename}")
-        
-        # Asynchronously save the uploaded file
-        async with aiofiles.open(file_location, 'wb') as out_file:
-            content = await file.read()
-            await out_file.write(content)
+        # Loop through all uploaded files and save them to the same batch directory
+        for file in files:
+            # Sanitize filename and create the destination path
+            sanitized_filename = "".join(c for c in file.filename if c.isalnum() or c in ['.', '_', '-']).strip()
+            file_location = os.path.join(batch_dir, sanitized_filename)
             
-        print(f"File '{file.filename}' uploaded and saved to '{file_location}'")
-
-        # Initialize the state for the graph
-        initial_state = ShipmentState(
-            batch_id=str(thread_id),
-            unprocessed_files=[os.path.abspath(file_location)],
-            commercial_invoice=None,
-            bill_of_lading=None,
-            packing_list=None,
-            validation_report=None,
-            cross_validation_report=None,
-            final_status="processing",
-            agent_reasoning=None,
-            drafted_email=None
-        )
+            # Asynchronously save the uploaded file to the new batch directory
+            async with aiofiles.open(file_location, 'wb') as out_file:
+                content = await file.read()
+                await out_file.write(content)
+            
+            print(f"File '{file.filename}' uploaded to inbox as part of batch '{batch_id}'")
         
-        # LangGraph config requires a string-based thread_id for persistence
-        config = {"configurable": {"thread_id": str(thread_id)}}
-
-        print(f"Invoking graph for thread_id: {thread_id}")
-        
-        # Asynchronously invoke the graph and wait for the final state
-        final_state = await app.state.graph_app.ainvoke(initial_state, config)
-        
-        print(f"Graph execution finished. Final status: {final_state.get('final_status')}")
-        
-        # Save to relational analytics database
-        await save_shipment_to_analytics(final_state)
-        print("Shipment saved to analytics DB.")
-        
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content={
-                "message": "Document processing complete.",
-                "document_id": file_id,
-                "final_status": final_state.get("final_status"),
-                "validation_report": final_state.get("validation_report"),
-                "cross_validation_report": final_state.get("cross_validation_report"),
-                "drafted_email": final_state.get("drafted_email"),
-                "agent_reasoning": final_state.get("agent_reasoning"),
-            }
-        )
+        return {
+            "message": "File(s) upload accepted. Processing has started.",
+            "batch_id": batch_id
+        }
 
     except Exception as e:
-        print(f"An error occurred during document processing: {e}")
+        print(f"An error occurred during document upload: {e}")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"message": f"An internal server error occurred: {e}"}
+            content={"message": f"An internal server error occurred during upload: {e}"}
         )
 
 @app.get("/", response_class=FileResponse)
